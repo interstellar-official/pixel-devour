@@ -22,6 +22,9 @@
   #abilityBtn:disabled{opacity:.35}
   #abilityBtn:active{background:#fff;color:#000}
   #soundBtn{position:fixed;top:8px;right:8px;background:rgba(0,0,0,.6);border:1px solid #fff;color:#fff;padding:4px 8px;font-family:inherit;font-size:11px;cursor:pointer;z-index:11}
+  #shopBtn{position:fixed;top:40px;right:8px;background:#0a0a0a;border:1px solid #ffd700;color:#ffd700;padding:6px 10px;font-family:inherit;font-size:12px;cursor:pointer;z-index:11;display:none;letter-spacing:2px;font-weight:bold}
+  #shopBtn.show{display:block;animation:blink 1.4s infinite}
+  #shopBtn:active{background:#ffd700;color:#000}
 
   .screen{position:fixed;inset:0;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50;text-align:center;padding:24px;letter-spacing:1px;overflow-y:auto}
   .screen h1{font-size:42px;margin-bottom:8px;text-shadow:2px 2px 0 #444}
@@ -67,6 +70,7 @@
 </div>
 
 <button id="soundBtn">🔊 ON</button>
+<button id="shopBtn">🛒 SHOP</button>
 
 <div id="joystick"><div class="stick" id="stick"></div></div>
 <button id="abilityBtn">SKILL</button>
@@ -101,6 +105,14 @@
   <h2 id="draftReason" style="margin-bottom:18px;color:#fff;font-size:16px">吞噬了 3 顆</h2>
   <div class="pick-list" id="draftCards"></div>
   <div style="font-size:11px;color:#888">藍=主動/被動強化 · 紅=詛咒（強但有副作用）</div>
+</div>
+
+<div class="screen" id="shopScreen" style="display:none">
+  <div style="font-size:13px;color:#888;letter-spacing:3px;margin-bottom:8px">SHOP · 用體積購買</div>
+  <h2 style="margin-bottom:18px;color:#ffd700;font-size:18px">當前體積 <span id="shopSize">--</span></h2>
+  <div class="pick-list" id="shopItems"></div>
+  <div style="font-size:11px;color:#888;margin-bottom:14px">每件商品扣除對應體積（保底 6）</div>
+  <button class="go" onclick="closeShop()">CLOSE</button>
 </div>
 
 <div class="screen" id="endScreen" style="display:none">
@@ -271,8 +283,18 @@ function newPlayer(abilityKey){
   return { x:MAP/2, y:MAP/2, vx:0, vy:0, r:14, isPlayer:true, alive:true,
            ability:abilityKey, cd:0,
            dashT:0, bluffT:0, phaseT:0, magnetT:0, lureT:0, chompT:0,
-           mods, satellites:[] };
+           mods, satellites:[], tentacles:[] };
 }
+
+const SHOP_THRESHOLD = 25;
+const SHOP = {
+  tentacle:  { name:"觸手",      desc:"延伸的觸手會揮舞\n碰敵人削體積、吸食物", cost:8,  apply(p){ p.tentacles.push({}); } },
+  satellite: { name:"衛星 +1",   desc:"額外環繞的小球",                    cost:6,  apply(p){ p.mods.satellites++; } },
+  spike:     { name:"尖刺 +1",   desc:"尖刺強化，削對方更多",              cost:5,  apply(p){ p.mods.spikes++; } },
+  regen:     { name:"再生 +1",   desc:"場內每秒回復 +0.4 體積",            cost:7,  apply(p){ p.mods.regen++; } },
+  slow:      { name:"減速場 +1", desc:"附近敵人慢更多",                    cost:6,  apply(p){ p.mods.slow++; } },
+  cdReset:   { name:"立即冷卻",  desc:"當前技能 CD 歸零",                   cost:4,  apply(p){ p.cd=0; Audio.cdready(); } },
+};
 function newState(abilityKey){
   const balls=[];
   const player = newPlayer(abilityKey);
@@ -342,6 +364,13 @@ abilityBtn.addEventListener('touchstart',e=>{
   e.preventDefault(); e.stopPropagation();
   useAbility();
 },{passive:false});
+
+const shopBtn = document.getElementById('shopBtn');
+shopBtn.addEventListener('click', openShop);
+shopBtn.addEventListener('touchstart', e=>{
+  e.preventDefault(); e.stopPropagation();
+  openShop();
+}, {passive:false});
 
 let mouseTarget=null;
 cv.addEventListener('mousedown',e=>{ mouseTarget={x:e.clientX,y:e.clientY,active:true}; });
@@ -584,6 +613,20 @@ function update(dt){
       sat.x = p.x + Math.cos(sat.ang)*orbitR;
       sat.y = p.y + Math.sin(sat.ang)*orbitR;
     }
+
+    // tentacles — sway around the player, head reaches further as you grow
+    const baseRot = state.t * 0.7;
+    const N = p.tentacles.length;
+    for(let i=0;i<N;i++){
+      const ten = p.tentacles[i];
+      const offset = (i / Math.max(1,N)) * Math.PI*2;
+      const wig = Math.sin(state.t*2.5 + i*1.7)*0.55;
+      ten.ang = baseRot + offset + wig;
+      ten.length = 60 + p.r*0.9;
+      ten.headR = 6;
+      ten.headX = p.x + Math.cos(ten.ang)*ten.length;
+      ten.headY = p.y + Math.sin(ten.ang)*ten.length;
+    }
   }
 
   // AI movement
@@ -700,6 +743,47 @@ function update(dt){
         }
       }
     }
+    // tentacles — head can eat food, devour small balls, chip large ones
+    for(const ten of p.tentacles){
+      for(let fi=state.foods.length-1;fi>=0;fi--){
+        const f=state.foods[fi];
+        const d = Math.hypot(ten.headX-f.x, ten.headY-f.y);
+        if(d < 60){
+          // pull-in
+          f.x += (ten.headX-f.x)/(d||1)*220*dt;
+          f.y += (ten.headY-f.y)/(d||1)*220*dt;
+        }
+        if(Math.hypot(ten.headX-f.x, ten.headY-f.y) < ten.headR+f.r){
+          p.r = Math.sqrt(p.r*p.r + f.r*f.r*0.5);
+          state.foods.splice(fi,1);
+        }
+      }
+      for(const b of state.balls){
+        if(b.isPlayer || !b.alive) continue;
+        if(Math.hypot(ten.headX-b.x, ten.headY-b.y) < ten.headR+b.r){
+          if(b.r < p.r*0.5){
+            // grab and eat outright
+            const sr = b.r;
+            b.alive=false;
+            state.eatCount++;
+            p.r = Math.sqrt(p.r*p.r + sr*sr*0.6);
+            Audio.eat();
+            if(state.eatCount >= state.nextDraftAt){
+              state.pendingDraftPick++; state.nextDraftAt += 3;
+            }
+          } else {
+            b.r -= 8*dt;
+            if(b.r<5){
+              b.alive=false;
+              state.eatCount++;
+              if(state.eatCount >= state.nextDraftAt){
+                state.pendingDraftPick++; state.nextDraftAt += 3;
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   // ball-vs-ball
@@ -800,6 +884,10 @@ function update(dt){
   modsEl.innerHTML = parts.length? parts.join(' · ') : '';
 
   document.getElementById('zoneWarn').classList.toggle('show', p.alive && !inZone(p.x,p.y));
+
+  // shop button visibility
+  if(p.alive && p.r >= SHOP_THRESHOLD && !state.paused) shopBtn.classList.add('show');
+  else shopBtn.classList.remove('show');
 }
 
 function eat(big, small){
@@ -869,6 +957,46 @@ function pickDraft(c){
   state.paused=false;
 }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
+
+// ---------- Shop ----------
+function openShop(){
+  if(!state || state.over || state.paused) return;
+  if(!state.player.alive || state.player.r < SHOP_THRESHOLD) return;
+  state.paused = true;
+  shopBtn.classList.remove('show');
+  renderShop();
+  document.getElementById('shopScreen').style.display='flex';
+}
+function renderShop(){
+  document.getElementById('shopSize').textContent = Math.round(state.player.r);
+  const list = document.getElementById('shopItems');
+  list.innerHTML='';
+  for(const k of Object.keys(SHOP)){
+    const item = SHOP[k];
+    const affordable = state.player.r - item.cost >= 6;
+    const btn = document.createElement('button');
+    btn.className = 'pick-card buff';
+    btn.disabled = !affordable;
+    btn.style.opacity = affordable ? '1' : '0.35';
+    btn.style.cursor = affordable ? 'pointer' : 'not-allowed';
+    btn.innerHTML = `<span class="tag" style="color:#ffd700;border-color:#ffd700">花費 ${item.cost} 體積</span><b>${item.name}</b>${item.desc.replace(/\n/g,'<br>')}`;
+    btn.onclick = ()=>{ if(affordable) buyShop(k); };
+    list.appendChild(btn);
+  }
+}
+function buyShop(key){
+  const item = SHOP[key];
+  const p = state.player;
+  if(p.r - item.cost < 6) return;
+  p.r -= item.cost;
+  item.apply(p);
+  Audio.pick();
+  renderShop();
+}
+function closeShop(){
+  document.getElementById('shopScreen').style.display='none';
+  if(state) state.paused = false;
+}
 
 // ---------- Render ----------
 function world2screen(x,y){
@@ -1051,6 +1179,27 @@ function render(){
       const ss=world2screen(sat.x,sat.y);
       pxCircle(ss.x, ss.y, sat.r, '#ffffff');
     }
+    // tentacles — chain of dots from body to wiggling head
+    for(const ten of p.tentacles){
+      const segs = 10;
+      const sp = world2screen(p.x, p.y);
+      const sh = world2screen(ten.headX, ten.headY);
+      for(let i=1;i<=segs;i++){
+        const t = i/segs;
+        // slight curve for organic feel
+        const cx = sp.x + (sh.x-sp.x)*t;
+        const cy = sp.y + (sh.y-sp.y)*t;
+        const wob = Math.sin(state.t*4 + i*0.7)*3*t;
+        const px = cx + wob*Math.cos(ten.ang+Math.PI/2);
+        const py = cy + wob*Math.sin(ten.ang+Math.PI/2);
+        ctx.fillStyle = '#dddddd';
+        ctx.fillRect(Math.floor(px-PIXEL/2), Math.floor(py-PIXEL/2), PIXEL, PIXEL);
+      }
+      pxCircle(sh.x, sh.y, ten.headR, '#ffffff');
+      // tip pupil
+      ctx.fillStyle='#000';
+      ctx.fillRect(Math.floor(sh.x-PIXEL/2), Math.floor(sh.y-PIXEL/2), PIXEL, PIXEL);
+    }
   }
 
   // warp tint
@@ -1137,7 +1286,9 @@ function restart(){
   document.getElementById('endScreen').style.display='none';
   document.getElementById('rollScreen').style.display='none';
   document.getElementById('draftScreen').style.display='none';
+  document.getElementById('shopScreen').style.display='none';
   document.getElementById('startScreen').style.display='flex';
+  shopBtn.classList.remove('show');
   renderLB('lbStart');
   state=null;
 }
