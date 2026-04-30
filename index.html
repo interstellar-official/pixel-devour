@@ -324,6 +324,11 @@ function updateJoy(t){
   joyVec.x=dx/max; joyVec.y=dy/max;
 }
 abilityBtn.addEventListener('click',useAbility);
+abilityBtn.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  useAbility();
+},{passive:false});
 
 let mouseTarget=null;
 cv.addEventListener('mousedown',e=>{ mouseTarget={x:e.clientX,y:e.clientY,active:true}; });
