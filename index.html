@@ -63,7 +63,7 @@
 <div id="wrap"><canvas id="cv"></canvas></div>
 
 <div id="hud">
-  <div class="box">SIZE <span id="sz">10</span> | ALIVE <span id="al">0</span> | EATS <span id="ek">0</span>
+  <div class="box">R<span id="hudRound">1</span>-<span id="hudMatch">1</span> | SIZE <span id="sz">10</span> | ALIVE <span id="al">0</span> | EATS <span id="ek">0</span> | <span style="color:#ffd700">¢<span id="hudCoins">0</span></span>
     <span id="mods"></span>
   </div>
   <div class="box">SKILL: <span id="ability">-</span></div>
@@ -80,17 +80,19 @@
 
 <div class="screen" id="startScreen">
   <h1>PIXEL DEVOUR</h1>
-  <h2>像素吞噬</h2>
-  <p>吃比你小的球與食物豆變大，避開比你大的。<br>
-     紅色死圈會不規則收縮。<br>
-     每吃 3 顆三選一抽強化（<span style="color:#9cf">藍卡=強化</span> · <span style="color:#f99">紅卡=詛咒</span>）。<br>
-     <span style="color:#ffd700">10 種主動 / 10 種被動</span></p>
-  <button class="go" onclick="rollAndStart()">START</button>
+  <h2>像素吞噬 · 5 輪闖關</h2>
+  <p><span style="color:#ffd700">5 輪 × 3 局 = 15 局</span><br>
+     吃光全場 → 贏得代幣 → 買持久道具<br>
+     被吃 / 縮圈死 → 闖關失敗<br>
+     抽卡 mod 與道具會跨局累積（複利）<br>
+     每輪 AI 變多、變聰明，第 3 局有<span style="color:#f99">巨型怪</span></p>
+  <button class="go" onclick="rollAndStart()">START CAMPAIGN</button>
   <div style="font-size:11px;color:#666;line-height:1.6;margin-top:18px">
     桌機: WASD/方向鍵 · 空白鍵放技能<br>
-    手機: 左下搖桿 · 右下技能鈕
+    手機: 左下搖桿 · 右下技能鈕<br>
+    體積 ≥ 25 開內建商店（消耗體積買升級）
   </div>
-  <div class="leaderboard" id="lbStart"><h3>★ 排行榜 ★</h3><ol></ol></div>
+  <div class="leaderboard" id="lbStart"><h3>★ 排行榜（最高代幣） ★</h3><ol></ol></div>
 </div>
 
 <div class="screen" id="rollScreen" style="display:none">
@@ -113,6 +115,16 @@
   <div class="pick-list" id="shopItems"></div>
   <div style="font-size:11px;color:#888;margin-bottom:14px">每件商品扣除對應體積（保底 6）</div>
   <button class="go" onclick="closeShop()">CLOSE</button>
+</div>
+
+<div class="screen" id="roundShopScreen" style="display:none">
+  <div style="font-size:14px;color:#888;letter-spacing:3px">ROUND CLEARED</div>
+  <h1 id="rsTitle" style="margin-top:6px">R1-1 ✓</h1>
+  <h2 id="rsEarn" style="color:#ffd700">+0 ¢</h2>
+  <p id="rsTotal" style="color:#bbb;margin-bottom:14px">代幣總計：0 ¢</p>
+  <div style="font-size:13px;color:#888;letter-spacing:3px;margin-bottom:8px">SHOP · 道具持續整個闖關</div>
+  <div class="pick-list" id="rsItems"></div>
+  <button class="go" onclick="nextMatch()" style="margin-top:8px">NEXT MATCH ▶</button>
 </div>
 
 <div class="screen" id="endScreen" style="display:none">
@@ -263,27 +275,98 @@ const MODS = {
 
 // ---------- State ----------
 let state = null;
-function makeAI(){
-  const sizeRoll=Math.random();
+function makeAI(diff){
+  const sizeRoll=Math.random()+ (diff?diff.bigBias:0);
   let r;
   if(sizeRoll<0.35) r=8+Math.random()*4;
   else if(sizeRoll<0.8) r=12+Math.random()*8;
   else r=20+Math.random()*10;
+  // optionally give AI an ability
+  let ability = null;
+  if(diff && Math.random()<diff.abilityChance){
+    ability = ['blink','dash','phase'][Math.floor(Math.random()*3)];
+  }
   return {
-    x:Math.random()*MAP, y:Math.random()*MAP,
+    x:Math.random()*(diff?diff.mapSize:MAP), y:Math.random()*(diff?diff.mapSize:MAP),
     vx:0, vy:0, r,
     isPlayer:false, alive:true,
     personality:["greedy","timid","bully"][Math.floor(Math.random()*3)],
     wanderAng:Math.random()*Math.PI*2,
-    wanderT:0, phaseT:0
+    wanderT:0, phaseT:0, dashT:0,
+    ability, abilityCD: ability? 1+Math.random()*2 : 0,
   };
 }
-function newPlayer(abilityKey){
-  const mods={}; for(const k of Object.keys(MODS)) mods[k]=0;
-  return { x:MAP/2, y:MAP/2, vx:0, vy:0, r:14, isPlayer:true, alive:true,
+function makeBoss(diff){
+  return {
+    x:diff.mapSize*(0.2+Math.random()*0.6),
+    y:diff.mapSize*(0.2+Math.random()*0.6),
+    vx:0, vy:0, r:diff.bossR,
+    isPlayer:false, alive:true,
+    personality:'bully', isBoss:true,
+    wanderAng:0, wanderT:0, phaseT:0, dashT:0,
+    ability:'blink', abilityCD:2,
+  };
+}
+function newPlayer(abilityKey, runMods, items){
+  const mods={}; for(const k of Object.keys(MODS)) mods[k]=runMods[k]||0;
+  let r0 = 14;
+  if(items && items.bigStart) r0 += 5*items.bigStart;
+  return { x:0, y:0, vx:0, vy:0, r:r0, isPlayer:true, alive:true,
            ability:abilityKey, cd:0,
            dashT:0, bluffT:0, phaseT:0, magnetT:0, lureT:0, chompT:0,
-           mods, satellites:[], tentacles:[] };
+           mods, satellites:[], tentacles:[],
+           firstEatUsed:false, revivesLeft:0 };
+}
+
+// 24 persistent items (campaign-wide, bought between matches)
+const ITEMS = {
+  spike1:    { name:"尖刺一根",   desc:"開局 +1 尖刺",        cost:8 },
+  foodX2:    { name:"大胃王",     desc:"食物給予 +100% 體積", cost:10 },
+  bigStart:  { name:"先天稟賦",   desc:"開局體積 +5",         cost:6 },
+  satellite: { name:"衛星",       desc:"開局 +1 衛星",        cost:9 },
+  tentacle:  { name:"觸手",       desc:"開局 +1 觸手",        cost:11 },
+  speedyCD:  { name:"急性子",     desc:"技能 CD -25%",        cost:7 },
+  revive:    { name:"心臟",       desc:"死亡時自動復活一次",   cost:14 },
+  insurance: { name:"保險箱",     desc:"死圈傷害 -50%",       cost:8 },
+  extraDraft:{ name:"抽卡 +1",    desc:"抽卡時可選 4 張",     cost:7 },
+  compass:   { name:"羅盤",       desc:"食物刷新數量 +50%",   cost:6 },
+  armor:     { name:"鎧甲",       desc:"死圈傷害 -30%",       cost:6 },
+  hunger:    { name:"飢餓詛咒",   desc:"吞噬獲得 +20%",       cost:8 },
+  shadow:    { name:"影子",       desc:"開局自動 PHASE 1.5s", cost:9 },
+  fist:      { name:"拳套",       desc:"DASH 啃咬傷害 +100%", cost:8 },
+  slime:     { name:"黏液",       desc:"永久 100 範圍食物磁鐵", cost:7 },
+  eye:       { name:"視野晶體",   desc:"全場顯示所有球（雷達）", cost:10 },
+  fang:      { name:"鋼牙",       desc:"吃同等大小球（門檻 1.0x）", cost:12 },
+  egg:       { name:"神之蛋",     desc:"開局 +1 隨機被動強化",  cost:13 },
+  fortune:   { name:"財神",       desc:"獲勝代幣 +30%",       cost:8 },
+  doubleBite:{ name:"雙重打擊",   desc:"CHOMP 可吃 1.8x 大球", cost:9 },
+  mirror:    { name:"反射",       desc:"尖刺反射 50% 傷害",   cost:9 },
+  perpetual: { name:"永動機",     desc:"場內 +1 永久再生",    cost:10 },
+  hawkEye:   { name:"心眼",       desc:"顯示所有球體積數字",  cost:5 },
+  ghost:     { name:"鬼火",       desc:"第一次吞噬時自動放假分身", cost:7 },
+};
+
+// difficulty ramps per round and within-round
+function difficultyFor(round, match){
+  const rIdx = round - 1;          // 0..4
+  return {
+    aiCount: 14 + rIdx*4 + (match-1)*2,   // R1M1=14, R5M3=34
+    senseMult: 1 + rIdx*0.15,
+    speedMult: 1 + rIdx*0.06,
+    abilityChance: Math.max(0, (round-2)*0.25),  // R1=0%, R2=0%, R3=25%, R4=50%, R5=75%
+    bigBias: rIdx*0.06,
+    spawnBoss: match===3,                  // last match of each round → boss
+    bossR: 28 + rIdx*6,                    // boss size grows by round
+    foodCount: 90 + rIdx*10,
+    mapSize: 2200 + rIdx*100,
+  };
+}
+
+// run = persistent campaign state across all 15 matches
+let run = null;
+function newRun(initialAbility){
+  const mods={}; for(const k of Object.keys(MODS)) mods[k]=0;
+  return { round:1, match:1, coins:0, items:{}, mods, ability:initialAbility, totalEats:0 };
 }
 
 const SHOP_THRESHOLD = 25;
@@ -295,28 +378,70 @@ const SHOP = {
   slow:      { name:"減速場 +1", desc:"附近敵人慢更多",                    cost:6,  apply(p){ p.mods.slow++; } },
   cdReset:   { name:"立即冷卻",  desc:"當前技能 CD 歸零",                   cost:4,  apply(p){ p.cd=0; Audio.cdready(); } },
 };
-function newState(abilityKey){
+function buildModifiers(items){
+  items = items || {};
+  return {
+    coinMult:    1 + (items.fortune||0)*0.3,
+    foodMult:    1 + (items.foodX2||0),
+    zoneDmgMult: Math.pow(0.5, items.insurance||0) * Math.pow(0.7, items.armor||0),
+    cdMult:      Math.pow(0.75, items.speedyCD||0),
+    eatBonus:    (items.hunger||0)*0.2,
+    dashBiteMult:1 + (items.fist||0)*1,
+    passiveMagnetR:(items.slime||0)*100,
+    chompFactor: 1.4 + (items.doubleBite||0)*0.4,
+    foodCountMult:1 + (items.compass||0)*0.5,
+    spikeReflect:(items.mirror||0)*0.5,
+    eatThreshold:Math.max(0.95, 1.05 - (items.fang||0)*0.05),
+    extraDrafts: items.extraDraft||0,
+    showRadar:   !!items.eye,
+    showAISizes: !!items.hawkEye,
+    revivesLeft: items.revive||0,
+    firstEatGhost:!!items.ghost,
+  };
+}
+
+function applyStartItems(p, items){
+  if(!items) return;
+  if(items.spike1) p.mods.spikes += items.spike1;
+  if(items.satellite) p.mods.satellites += items.satellite;
+  if(items.tentacle){ for(let i=0;i<items.tentacle;i++) p.tentacles.push({}); }
+  if(items.shadow) p.phaseT = 1.5;
+  if(items.perpetual) p.mods.regen += items.perpetual;
+  if(items.egg){
+    const buffs=['regen','vamp','slow','skin','spikes','satellites'];
+    for(let i=0;i<items.egg;i++) p.mods[buffs[Math.floor(Math.random()*buffs.length)]]++;
+  }
+  p.revivesLeft = items.revive || 0;
+}
+
+function newState(runRef){
+  const diff = difficultyFor(runRef.round, runRef.match);
   const balls=[];
-  const player = newPlayer(abilityKey);
+  const player = newPlayer(runRef.ability, runRef.mods, runRef.items);
+  player.x = diff.mapSize/2; player.y = diff.mapSize/2;
+  applyStartItems(player, runRef.items);
   balls.push(player);
-  for(let i=0;i<AI_COUNT;i++) balls.push(makeAI());
+  for(let i=0;i<diff.aiCount;i++) balls.push(makeAI(diff));
+  if(diff.spawnBoss) balls.push(makeBoss(diff));
   const foods=[];
-  for(let i=0;i<FOOD_COUNT;i++) foods.push({ x:Math.random()*MAP, y:Math.random()*MAP, r:3+Math.random()*2 });
-  // irregular zone
+  const fc = Math.floor(diff.foodCount * (1 + (runRef.items.compass||0)*0.5));
+  for(let i=0;i<fc;i++) foods.push({ x:Math.random()*diff.mapSize, y:Math.random()*diff.mapSize, r:3+Math.random()*2 });
   const N=24;
   const radii=new Array(N), targets=new Array(N), nPhase=new Array(N), nSpd=new Array(N);
   for(let i=0;i<N;i++){
-    radii[i]=MAP*0.6; targets[i]=MAP*0.6;
+    radii[i]=diff.mapSize*0.6; targets[i]=diff.mapSize*0.6;
     nPhase[i]=Math.random()*Math.PI*2;
     nSpd[i]=0.25+Math.random()*0.4;
   }
   return {
     balls, player, foods, decoys:[], effects:[],
     cam:{x:player.x,y:player.y},
-    zone:{ cx:MAP/2, cy:MAP/2, N, radii, targets, nPhase, nSpd, base:MAP*0.6 },
+    zone:{ cx:diff.mapSize/2, cy:diff.mapSize/2, N, radii, targets, nPhase, nSpd, base:diff.mapSize*0.6 },
     t:0, over:false, eatCount:0, endgameMode:false, paused:false,
     pendingDraftPick:0, draft:null, nextDraftAt:3,
-    damageT:0, warpT:0, avgSize:14
+    damageT:0, warpT:0, avgSize:14,
+    diff, MAP:diff.mapSize, FOOD_COUNT:fc,
+    modifiers: buildModifiers(runRef.items),
   };
 }
 
@@ -379,7 +504,11 @@ cv.addEventListener('mouseup',()=>{ mouseTarget=null; });
 cv.addEventListener('mouseleave',()=>{ mouseTarget=null; });
 
 // ---------- Ability ----------
-function cdMult(p){ return Math.max(0.15, 1 - 0.35*p.mods.frenzy); }
+function cdMult(p){
+  let m = 1 - 0.35*p.mods.frenzy;
+  if(state && state.modifiers) m *= state.modifiers.cdMult;
+  return Math.max(0.1, m);
+}
 function useAbility(){
   if(!state || state.over || state.paused) return;
   const p=state.player;
@@ -478,7 +607,7 @@ function getInputDir(forAbility=false){
   if(m>1){ dx/=m; dy/=m; }
   if(m===0 && state){
     const p=state.player;
-    let cx=MAP/2-p.x, cy=MAP/2-p.y;
+    let cx=state.MAP/2-p.x, cy=state.MAP/2-p.y;
     const cd=Math.hypot(cx,cy);
     if(cd<6) return forAbility?{x:1,y:0}:{x:0,y:0};
     return { x:cx/cd*0.5, y:cy/cd*0.5 };
@@ -488,8 +617,9 @@ function getInputDir(forAbility=false){
 
 // ---------- Helpers ----------
 function clampToMap(b){
-  b.x=Math.max(b.r,Math.min(MAP-b.r,b.x));
-  b.y=Math.max(b.r,Math.min(MAP-b.r,b.y));
+  const M = state ? state.MAP : MAP;
+  b.x=Math.max(b.r,Math.min(M-b.r,b.x));
+  b.y=Math.max(b.r,Math.min(M-b.r,b.y));
 }
 function speedFor(b){
   let s = 220 / (1 + b.r/14);
@@ -498,7 +628,9 @@ function speedFor(b){
     if(state && state.avgSize && b.r < state.avgSize*0.8) s *= 1.3; // underdog
     if(b.chompT>0) s *= 1.8;
   } else {
+    if(state.diff) s *= state.diff.speedMult;
     if(state.warpT>0) s *= 0.4;
+    if(b.dashT>0) s *= 1.8;
     if(state.player.alive && state.player.mods.slow>0){
       const d = Math.hypot(b.x-state.player.x, b.y-state.player.y);
       if(d<180) s *= Math.max(0.4, 1 - 0.3*state.player.mods.slow);
@@ -546,17 +678,17 @@ function update(dt){
   }
 
   // food respawn
-  while(state.foods.length<FOOD_COUNT){
-    state.foods.push({ x:Math.random()*MAP, y:Math.random()*MAP, r:3+Math.random()*2 });
+  while(state.foods.length<state.FOOD_COUNT){
+    state.foods.push({ x:Math.random()*state.MAP, y:Math.random()*state.MAP, r:3+Math.random()*2 });
   }
   // AI trickle
   if(!state.endgameMode){
     const aliveAI = state.balls.filter(b=>!b.isPlayer && b.alive).length;
-    if(aliveAI < AI_COUNT-8 && Math.random()<dt*0.5){
+    if(aliveAI < state.diff.aiCount-8 && Math.random()<dt*0.5){
       let sx,sy,tries=0;
-      do{ sx=Math.random()*MAP; sy=Math.random()*MAP; tries++; }
+      do{ sx=Math.random()*state.MAP; sy=Math.random()*state.MAP; tries++; }
       while(tries<10 && Math.hypot(sx-state.player.x,sy-state.player.y)<400);
-      const a=makeAI(); a.x=sx; a.y=sy; state.balls.push(a);
+      const a=makeAI(state.diff); a.x=sx; a.y=sy; state.balls.push(a);
     }
   }
 
@@ -600,7 +732,7 @@ function update(dt){
       const dst=80+Math.random()*220;
       state.foods.push({ x:p.x+Math.cos(ang)*dst, y:p.y+Math.sin(ang)*dst, r:3+Math.random()*3 });
     }
-    if(p.r<5){ p.alive=false; endGame(false,"暴食詛咒掏空了你"); }
+    if(p.r<5 && !tryRevive(p)){ p.alive=false; endGame(false,"暴食詛咒掏空了你"); }
 
     // satellites
     while(p.satellites.length < p.mods.satellites){
@@ -634,9 +766,12 @@ function update(dt){
     if(b.isPlayer || !b.alive) continue;
     if(b.bluffT>0) b.bluffT-=dt;
     if(b.phaseT>0) b.phaseT-=dt;
+    if(b.dashT>0) b.dashT-=dt;
+    if(b.abilityCD>0) b.abilityCD-=dt;
     const playerVisMult = 1 + 0.5*p.mods.bloodlust;
 
-    const sense = 280 + b.r*4;
+    const senseMult = state.diff ? state.diff.senseMult : 1;
+    const sense = (280 + b.r*4) * senseMult;
     let prey=null, threat=null, prDist=1e9, thDist=1e9;
     for(const o of state.balls){
       if(o===b||!o.alive) continue;
@@ -674,14 +809,14 @@ function update(dt){
       tx += (prey.x-b.x)*w; ty += (prey.y-b.y)*w; weight+=w;
     }
     if(!inZone(b.x,b.y)){
-      const cx=MAP/2-b.x, cy=MAP/2-b.y;
+      const cx=state.MAP/2-b.x, cy=state.MAP/2-b.y;
       tx += cx*1.0; ty += cy*1.0; weight+=1.0;
     } else {
-      const ang=Math.atan2(b.y-MAP/2, b.x-MAP/2);
+      const ang=Math.atan2(b.y-state.MAP/2, b.x-state.MAP/2);
       const zr=zoneRadiusAt(ang);
-      const dC=Math.hypot(b.x-MAP/2,b.y-MAP/2);
+      const dC=Math.hypot(b.x-state.MAP/2,b.y-state.MAP/2);
       if(dC > zr - 50){
-        const cx=MAP/2-b.x, cy=MAP/2-b.y;
+        const cx=state.MAP/2-b.x, cy=state.MAP/2-b.y;
         tx += cx*0.6; ty += cy*0.6; weight+=0.6;
       }
     }
@@ -690,28 +825,50 @@ function update(dt){
     if(weight<0.1){ tx=Math.cos(b.wanderAng); ty=Math.sin(b.wanderAng); weight=1; }
     const m=Math.hypot(tx,ty)||1;
     tx/=m; ty/=m;
+    // AI uses ability
+    if(b.ability && b.abilityCD<=0){
+      if(b.ability==='blink' && threat && thDist<150){
+        // emergency teleport away from threat
+        b.x += (b.x-threat.x)/Math.max(1,thDist) * 120;
+        b.y += (b.y-threat.y)/Math.max(1,thDist) * 120;
+        clampToMap(b);
+        b.abilityCD = 4;
+      } else if(b.ability==='dash' && prey && prDist<sense*0.6){
+        b.dashT = 0.6;
+        b.abilityCD = 4;
+      } else if(b.ability==='phase' && threat && thDist<140){
+        b.phaseT = 1.0;
+        b.abilityCD = 5;
+      }
+    }
     const spd=speedFor(b);
     b.vx=tx*spd; b.vy=ty*spd;
     b.x+=b.vx*dt; b.y+=b.vy*dt;
     clampToMap(b);
   }
 
-  // food eating (with magnet)
-  if(p.alive && p.magnetT>0){
-    for(const f of state.foods){
-      const d=Math.hypot(p.x-f.x, p.y-f.y);
-      if(d<300 && d>1){
-        const k=(1-d/300)*180*dt;
-        f.x += (p.x-f.x)/d*k; f.y += (p.y-f.y)/d*k;
+  // food eating (with magnet — active and passive slime)
+  if(p.alive){
+    const passiveR = state.modifiers ? state.modifiers.passiveMagnetR : 0;
+    const activeR = p.magnetT>0 ? 300 : 0;
+    const magnetR = Math.max(passiveR, activeR);
+    if(magnetR>0){
+      for(const f of state.foods){
+        const d=Math.hypot(p.x-f.x, p.y-f.y);
+        if(d<magnetR && d>1){
+          const k=(1-d/magnetR)*180*dt;
+          f.x += (p.x-f.x)/d*k; f.y += (p.y-f.y)/d*k;
+        }
       }
     }
   }
+  const foodMult = state.modifiers ? state.modifiers.foodMult : 1;
   for(const b of state.balls){
     if(!b.alive) continue;
     for(let fi=state.foods.length-1; fi>=0; fi--){
       const f=state.foods[fi];
       if(Math.hypot(b.x-f.x,b.y-f.y) < b.r+f.r){
-        let factor = 0.6;
+        let factor = 0.6 * (b.isPlayer ? foodMult : 1);
         if(b.isPlayer) factor *= (1 + 0.4*b.mods.vamp);
         b.r = Math.sqrt(b.r*b.r + f.r*f.r*factor);
         state.foods.splice(fi,1);
@@ -787,6 +944,10 @@ function update(dt){
   }
 
   // ball-vs-ball
+  const eatThreshold = state.modifiers ? state.modifiers.eatThreshold : 1.05;
+  const chompFactor = state.modifiers ? state.modifiers.chompFactor : 1.4;
+  const dashBiteMult = state.modifiers ? state.modifiers.dashBiteMult : 1;
+  const spikeReflect = state.modifiers ? state.modifiers.spikeReflect : 0;
   for(let i=0;i<state.balls.length;i++){
     const a=state.balls[i]; if(!a.alive) continue;
     for(let j=i+1;j<state.balls.length;j++){
@@ -795,15 +956,17 @@ function update(dt){
       if(d < a.r+c.r-2){
         let big, small;
         if(a.r > c.r){ big=a; small=c; } else { big=c; small=a; }
-        if(big.r <= small.r*1.05) continue;
-        // chomp lets player eat balls up to 1.4x own size
-        if(small.isPlayer && small.chompT>0 && big.r < small.r*1.4){
+        // player uses item-modified eat threshold; AI uses default 1.05
+        const thr = (small.isPlayer || big.isPlayer) ? eatThreshold : 1.05;
+        if(big.r <= small.r*thr) continue;
+        // chomp lets player eat much larger
+        if(small.isPlayer && small.chompT>0 && big.r < small.r*chompFactor){
           eat(small, big); continue;
         }
         const smallSafe = small.dashT>0 || small.phaseT>0 || (small.isPlayer && small.chompT>0);
         if(smallSafe){
           if(small.isPlayer){
-            const steal = Math.min(6, big.r*0.3);
+            const steal = Math.min(6, big.r*0.3) * dashBiteMult;
             big.r = Math.max(5, big.r - steal);
             small.r = Math.sqrt(small.r*small.r + steal*steal*0.5);
             const dx=small.x-big.x, dy=small.y-big.y;
@@ -818,8 +981,12 @@ function update(dt){
         }
         // spikes: prevent eating, chip big over time
         if(small.isPlayer && small.mods.spikes>0){
-          big.r = Math.max(5, big.r - small.mods.spikes*8*dt);
-          // gentle separation
+          const chip = small.mods.spikes*8*dt;
+          big.r = Math.max(5, big.r - chip);
+          if(spikeReflect>0){
+            // mirror reflect: damage taken converted to small gain
+            small.r += chip*spikeReflect*0.3;
+          }
           const dx=small.x-big.x, dy=small.y-big.y;
           const dd=Math.hypot(dx,dy)||1;
           small.x += dx/dd*1.2; small.y += dy/dd*1.2;
@@ -832,6 +999,7 @@ function update(dt){
   }
 
   // out-of-zone damage
+  const zoneDmgMult = state.modifiers ? state.modifiers.zoneDmgMult : 1;
   for(const b of state.balls){
     if(!b.alive) continue;
     if(!inZone(b.x,b.y)){
@@ -839,10 +1007,15 @@ function update(dt){
       if(b.isPlayer){
         dmg *= (1 + 0.6*b.mods.frenzy);
         dmg *= Math.max(0.2, 1 - 0.4*b.mods.skin);
+        dmg *= zoneDmgMult;
         state.damageT = 0.18;
       }
       b.r -= dmg*dt;
-      if(b.r<5){ b.alive=false; if(b.isPlayer) endGame(false,"被死圈吞噬"); }
+      if(b.r<5){
+        if(b.isPlayer && tryRevive(b)) continue;
+        b.alive=false;
+        if(b.isPlayer) endGame(false,"被死圈吞噬");
+      }
     }
   }
   if(state.damageT>0){ state.damageT-=dt; document.getElementById('damageFlash').classList.add('show'); }
@@ -888,6 +1061,26 @@ function update(dt){
   // shop button visibility
   if(p.alive && p.r >= SHOP_THRESHOLD && !state.paused) shopBtn.classList.add('show');
   else shopBtn.classList.remove('show');
+
+  // run info HUD
+  if(run){
+    document.getElementById('hudRound').textContent = run.round;
+    document.getElementById('hudMatch').textContent = run.match;
+    document.getElementById('hudCoins').textContent = run.coins;
+  }
+}
+
+function tryRevive(p){
+  if(p.revivesLeft>0){
+    p.revivesLeft--;
+    p.r = 14;
+    p.x = state.MAP/2; p.y = state.MAP/2;
+    p.phaseT = 2.0;
+    p.cd = 0;
+    Audio.win();
+    return true;
+  }
+  return false;
 }
 
 function eat(big, small){
@@ -895,17 +1088,31 @@ function eat(big, small){
   let factor = 0.7;
   if(big.isPlayer){
     factor *= (1 + 0.3*big.mods.glutton) * (1 + 0.4*big.mods.vamp);
+    if(state.modifiers) factor *= (1 + state.modifiers.eatBonus);
   }
   big.r = Math.sqrt(big.r*big.r + small.r*small.r * factor);
   if(big.isPlayer){
     big.r += big.mods.bloodlust;
     state.eatCount++;
     if(small.r > big.r*0.5) Audio.bigEat(); else Audio.eat();
+    // ghost: drop a decoy on first eat
+    if(state.modifiers && state.modifiers.firstEatGhost && !big.firstEatUsed){
+      big.firstEatUsed = true;
+      state.decoys.push({ x:big.x, y:big.y, fakeR:big.r*1.8, life:4 });
+      Audio.decoy();
+    }
     if(state.eatCount >= state.nextDraftAt){
       state.pendingDraftPick++; state.nextDraftAt += 3;
     }
   }
-  if(small.isPlayer){ Audio.death(); endGame(false, "你被吃了"); }
+  if(small.isPlayer){
+    if(tryRevive(small)){
+      small.alive = true;
+      return;
+    }
+    Audio.death();
+    endGame(false, "你被吃了");
+  }
 }
 
 // ---------- Draft ----------
@@ -916,7 +1123,8 @@ function openDraft(){
   for(const k of Object.keys(ABILITIES)) pool.push({type:'ability',key:k});
   for(const k of Object.keys(MODS))      pool.push({type:'mod',    key:k});
   shuffle(pool);
-  const cards=pool.slice(0,3);
+  const extras = state.modifiers ? state.modifiers.extraDrafts : 0;
+  const cards=pool.slice(0, 3 + extras);
   state.draft={ cards };
   Audio.draft();
 
@@ -949,8 +1157,10 @@ function pickDraft(c){
   if(c.type==='ability'){
     state.player.ability=c.key;
     state.player.cd = ABILITIES[c.key].cd*0.5;
+    if(run) run.ability = c.key;
   } else {
     state.player.mods[c.key]++;
+    if(run) run.mods[c.key] = (run.mods[c.key]||0) + 1;
   }
   state.draft=null;
   document.getElementById('draftScreen').style.display='none';
@@ -1089,7 +1299,7 @@ function render(){
   for(let y=oy;y<H;y+=step){ ctx.moveTo(0,y); ctx.lineTo(W,y); }
   ctx.stroke();
   // border
-  const tl=world2screen(0,0), br=world2screen(MAP,MAP);
+  const tl=world2screen(0,0), br=world2screen(state.MAP,state.MAP);
   ctx.strokeStyle='#444'; ctx.lineWidth=2;
   ctx.strokeRect(tl.x,tl.y,br.x-tl.x,br.y-tl.y);
   // zone
@@ -1164,6 +1374,15 @@ function render(){
       if(b.chompT>0) pxRing(s.x,s.y,b.r+PIXEL*3,'rgba(255,255,150,0.6)');
     } else {
       drawAIFace(s,b);
+      if(b.isBoss){
+        pxRing(s.x,s.y,b.r+PIXEL*3,'rgba(255,80,80,0.7)');
+      }
+      if(state.modifiers && state.modifiers.showAISizes){
+        ctx.fillStyle = b.r>state.player.r ? '#ff8888' : '#88ff88';
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(Math.round(b.r), s.x, s.y - b.r - 6);
+      }
     }
     if(b.dashT>0) pxRing(s.x,s.y,b.r+PIXEL*2,'rgba(255,255,255,0.5)');
     if(b.isPlayer && b.magnetT>0){
@@ -1208,6 +1427,35 @@ function render(){
     ctx.fillRect(0,0,W,H);
   }
 
+  // radar (eye item) — mini-map in top-left
+  if(state.modifiers && state.modifiers.showRadar && state.player.alive){
+    const size = 130, pad = 10, mx = pad, my = H - size - pad;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(mx,my,size,size);
+    ctx.strokeStyle = '#88ccff';
+    ctx.strokeRect(mx,my,size,size);
+    const sc = size / state.MAP;
+    // zone polygon
+    ctx.strokeStyle = 'rgba(187,51,51,0.6)';
+    ctx.beginPath();
+    for(let i=0;i<=state.zone.N;i++){
+      const ang = (i%state.zone.N)/state.zone.N*Math.PI*2;
+      const r = state.zone.radii[i%state.zone.N];
+      const wx = state.zone.cx + Math.cos(ang)*r;
+      const wy = state.zone.cy + Math.sin(ang)*r;
+      const x = mx + wx*sc, y = my + wy*sc;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.closePath(); ctx.stroke();
+    for(const b of state.balls){
+      if(!b.alive) continue;
+      const x = mx + b.x*sc, y = my + b.y*sc;
+      ctx.fillStyle = b.isPlayer ? '#ffd700' : (b.r>state.player.r ? '#ff5555' : '#aaaaaa');
+      const dotR = Math.max(2, Math.min(5, b.r*sc*0.6));
+      ctx.beginPath(); ctx.arc(x,y,dotR,0,Math.PI*2); ctx.fill();
+    }
+  }
+
   // endgame arrows
   if(state.endgameMode && state.player.alive){
     const cx=W/2, cy=H/2, margin=60;
@@ -1242,55 +1490,130 @@ function loop(now){
 }
 requestAnimationFrame(loop);
 
-// ---------- Screens ----------
-let rolledAbility=null;
+// ---------- Screens & Campaign Flow ----------
+function hideAllScreens(){
+  for(const id of ['startScreen','rollScreen','draftScreen','shopScreen','roundShopScreen','endScreen']){
+    document.getElementById(id).style.display='none';
+  }
+}
+
 function rollAndStart(){
   Audio.init();
   const ks=Object.keys(ABILITIES);
-  rolledAbility = ks[Math.floor(Math.random()*ks.length)];
+  const rolledAbility = ks[Math.floor(Math.random()*ks.length)];
+  run = newRun(rolledAbility);
   const a=ABILITIES[rolledAbility];
   document.getElementById('rollName').textContent=a.name;
-  document.getElementById('rollDesc').textContent=a.desc+`\nCD ${a.cd}s`;
-  document.getElementById('startScreen').style.display='none';
-  document.getElementById('endScreen').style.display='none';
+  document.getElementById('rollDesc').textContent=a.desc+`\nCD ${a.cd}s\n\n5 輪 × 3 局闖關`;
+  hideAllScreens();
   document.getElementById('rollScreen').style.display='flex';
   Audio.draft();
 }
 function commitStart(){
-  document.getElementById('rollScreen').style.display='none';
-  document.getElementById('endScreen').style.display='none';
-  document.getElementById('draftScreen').style.display='none';
-  state = newState(rolledAbility);
+  hideAllScreens();
+  state = newState(run);
+}
+
+function awardCoins(){
+  const finalSize = Math.round(state.player.r);
+  let coins = Math.floor(finalSize/2) + 5*run.round + state.eatCount*2;
+  if(state.modifiers) coins = Math.floor(coins * state.modifiers.coinMult);
+  return coins;
 }
 
 function endGame(won, reason){
   if(state.over) return;
   state.over=true;
-  if(won) Audio.win();
-  const finalSize=Math.round(state.player.r);
-  const score = state.eatCount*15 + finalSize*3 + (won?500:0);
-  const entry = { score, eats:state.eatCount, size:finalSize, won, t:Math.round(state.t) };
+  shopBtn.classList.remove('show');
+  if(won) Audio.win(); else Audio.death();
+
+  if(won){
+    const earned = awardCoins();
+    run.coins += earned;
+    run.totalEats += state.eatCount;
+    // last match of round 5 → campaign cleared
+    const lastMatch = (run.round===5 && run.match===3);
+    if(lastMatch){
+      showCampaignEnd(true, earned);
+    } else {
+      showRoundShop(earned);
+    }
+  } else {
+    showCampaignEnd(false, 0, reason);
+  }
+}
+
+function showRoundShop(earned){
+  document.getElementById('rsTitle').textContent = `R${run.round}-${run.match} ✓`;
+  document.getElementById('rsEarn').textContent = `+${earned} ¢`;
+  document.getElementById('rsTotal').textContent = `代幣總計：${run.coins} ¢`;
+  // pick 5 random items from pool
+  const keys = Object.keys(ITEMS);
+  shuffle(keys);
+  const offered = keys.slice(0, 5);
+  const list = document.getElementById('rsItems');
+  function refresh(){
+    list.innerHTML='';
+    for(const k of offered){
+      const item = ITEMS[k];
+      const owned = run.items[k]||0;
+      const affordable = run.coins >= item.cost;
+      const btn=document.createElement('button');
+      btn.className = 'pick-card buff';
+      btn.disabled = !affordable;
+      btn.style.opacity = affordable ? '1' : '0.4';
+      btn.style.cursor = affordable ? 'pointer' : 'not-allowed';
+      btn.innerHTML = `<span class="tag" style="color:#ffd700;border-color:#ffd700">¢ ${item.cost}${owned?` · 持有 ${owned}`:''}</span><b>${item.name}</b>${item.desc.replace(/\n/g,'<br>')}`;
+      btn.onclick = ()=>{
+        if(!affordable) return;
+        run.coins -= item.cost;
+        run.items[k] = (run.items[k]||0)+1;
+        Audio.pick();
+        document.getElementById('rsTotal').textContent = `代幣總計：${run.coins} ¢`;
+        refresh();
+      };
+      list.appendChild(btn);
+    }
+  }
+  refresh();
+  setTimeout(()=>{ document.getElementById('roundShopScreen').style.display='flex'; }, 600);
+}
+
+function nextMatch(){
+  // advance run pointer
+  if(run.match < 3){
+    run.match++;
+  } else {
+    run.match = 1;
+    run.round++;
+  }
+  hideAllScreens();
+  state = newState(run);
+}
+
+function showCampaignEnd(won, earned, reason){
+  const title = won ? 'CAMPAIGN COMPLETE' : 'RUN OVER';
+  const sub = won ? '征服了所有 5 輪 × 3 局' : (reason||'下一輪再來');
+  document.getElementById('endTitle').textContent = title;
+  document.getElementById('endSub').textContent = sub;
+  document.getElementById('endStats').textContent =
+    `R${run.round}-${run.match} · 總吞噬 ${run.totalEats||state.eatCount} 顆 · 最終體積 ${Math.round(state.player.r)}`;
+  document.getElementById('endScore').textContent = `代幣 ${run.coins} ¢`;
+  // save
+  const entry = { score: run.coins, eats: run.totalEats||state.eatCount, size: Math.round(state.player.r), won, t: Math.round(state.t) };
   saveScore(entry);
   const list=loadScores();
   const myIdx=list.findIndex(e=>e.score===entry.score && e.eats===entry.eats && e.size===entry.size);
-  document.getElementById('endTitle').textContent = won ? 'YOU WIN' : 'YOU DIED';
-  document.getElementById('endSub').textContent = won ? '吞噬了所有人' : (reason||'');
-  document.getElementById('endStats').textContent =
-    `存活 ${state.t.toFixed(1)}s · 吞噬 ${state.eatCount} 顆 · 最終體積 ${finalSize}`;
-  document.getElementById('endScore').textContent = `SCORE  ${score}`;
   renderLB('lbEnd', myIdx);
   setTimeout(()=>{ document.getElementById('endScreen').style.display='flex'; }, 700);
 }
 
 function restart(){
-  document.getElementById('endScreen').style.display='none';
-  document.getElementById('rollScreen').style.display='none';
-  document.getElementById('draftScreen').style.display='none';
-  document.getElementById('shopScreen').style.display='none';
+  hideAllScreens();
   document.getElementById('startScreen').style.display='flex';
   shopBtn.classList.remove('show');
   renderLB('lbStart');
-  state=null;
+  state=null; run=null;
 }
 
 renderLB('lbStart');
