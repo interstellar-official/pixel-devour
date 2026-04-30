@@ -10,9 +10,11 @@
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
   canvas{display:block;background:#0a0a0a;image-rendering:pixelated;image-rendering:crisp-edges}
 
-  #hud{position:fixed;top:8px;left:8px;right:8px;display:flex;justify-content:space-between;font-size:12px;pointer-events:none;z-index:10;letter-spacing:1px;gap:6px}
-  #hud .box{background:rgba(0,0,0,.6);border:1px solid #fff;padding:4px 8px;max-width:48vw}
-  #curses{font-size:10px;color:#ff8c8c;margin-top:2px;display:block}
+  #hud{position:fixed;top:8px;left:8px;right:8px;display:flex;justify-content:space-between;font-size:12px;pointer-events:none;z-index:10;letter-spacing:1px;gap:6px;flex-wrap:wrap}
+  #hud .box{background:rgba(0,0,0,.6);border:1px solid #fff;padding:4px 8px;max-width:60vw}
+  #mods{font-size:10px;margin-top:2px;display:block;line-height:1.4}
+  #mods .b{color:#9cf}
+  #mods .c{color:#f99}
 
   #joystick{position:fixed;left:20px;bottom:20px;width:120px;height:120px;border:2px solid #fff;border-radius:50%;background:rgba(255,255,255,.04);display:none;z-index:20;touch-action:none}
   #joystick .stick{position:absolute;left:50%;top:50%;width:48px;height:48px;background:#fff;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none}
@@ -24,16 +26,17 @@
   .screen{position:fixed;inset:0;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50;text-align:center;padding:24px;letter-spacing:1px;overflow-y:auto}
   .screen h1{font-size:42px;margin-bottom:8px;text-shadow:2px 2px 0 #444}
   .screen h2{font-size:20px;margin-bottom:24px;color:#aaa;font-weight:normal}
-  .screen p{font-size:14px;color:#bbb;line-height:1.8;max-width:480px;margin-bottom:20px}
-  .pick-list{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:24px;max-width:560px}
+  .screen p{font-size:14px;color:#bbb;line-height:1.8;max-width:520px;margin-bottom:20px}
+  .pick-list{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:20px;max-width:680px}
   .pick-card{flex:1;min-width:160px;max-width:200px;background:#000;border:2px solid #fff;color:#fff;padding:14px 12px;font-size:12px;font-family:inherit;cursor:pointer;letter-spacing:1px;text-align:left;line-height:1.6;white-space:pre-line}
   .pick-card.curse{border-color:#ff5555;color:#ffd0d0}
+  .pick-card.buff{border-color:#88ccff;color:#d0e8ff}
   .pick-card:hover,.pick-card:active{background:#fff;color:#000}
   .pick-card.curse:hover,.pick-card.curse:active{background:#ff5555;color:#000}
+  .pick-card.buff:hover,.pick-card.buff:active{background:#88ccff;color:#000}
   .pick-card b{font-size:15px;display:block;margin-bottom:6px}
   .pick-card .tag{display:inline-block;font-size:10px;padding:1px 6px;border:1px solid currentColor;margin-bottom:6px;letter-spacing:2px}
   .screen button.go{background:#fff;color:#000;border:none;padding:14px 36px;font-size:16px;cursor:pointer;font-family:inherit;font-weight:bold;letter-spacing:2px}
-  .screen button.go:hover{background:#aaa}
 
   .leaderboard{margin-top:18px;border:1px solid #444;padding:12px 18px;font-size:12px;color:#bbb;min-width:280px}
   .leaderboard h3{font-size:13px;color:#fff;letter-spacing:3px;margin-bottom:8px}
@@ -58,9 +61,9 @@
 
 <div id="hud">
   <div class="box">SIZE <span id="sz">10</span> | ALIVE <span id="al">0</span> | EATS <span id="ek">0</span>
-    <span id="curses"></span>
+    <span id="mods"></span>
   </div>
-  <div class="box">ABILITY: <span id="ability">-</span></div>
+  <div class="box">SKILL: <span id="ability">-</span></div>
 </div>
 
 <button id="soundBtn">🔊 ON</button>
@@ -75,14 +78,13 @@
   <h1>PIXEL DEVOUR</h1>
   <h2>像素吞噬</h2>
   <p>吃比你小的球與食物豆變大，避開比你大的。<br>
-     紅色死圈會不規則收縮，逃進中心吧。<br>
-     每吃 3 顆可以三選一抽強化（小心詛咒卡）。<br>
-     <span style="color:#ffd700">DASH/PHASE 撞大球可咬下一塊翻盤</span></p>
+     紅色死圈會不規則收縮。<br>
+     每吃 3 顆三選一抽強化（<span style="color:#9cf">藍卡=強化</span> · <span style="color:#f99">紅卡=詛咒</span>）。<br>
+     <span style="color:#ffd700">10 種主動 / 10 種被動</span></p>
   <button class="go" onclick="rollAndStart()">START</button>
   <div style="font-size:11px;color:#666;line-height:1.6;margin-top:18px">
     桌機: WASD/方向鍵 · 空白鍵放技能<br>
-    手機: 左下搖桿 · 右下技能鈕<br>
-    <span style="color:#888">沒輸入時自動往中心移動</span>
+    手機: 左下搖桿 · 右下技能鈕
   </div>
   <div class="leaderboard" id="lbStart"><h3>★ 排行榜 ★</h3><ol></ol></div>
 </div>
@@ -98,7 +100,7 @@
   <div style="font-size:13px;color:#888;letter-spacing:3px;margin-bottom:8px">CHOOSE ONE · 三選一</div>
   <h2 id="draftReason" style="margin-bottom:18px;color:#fff;font-size:16px">吞噬了 3 顆</h2>
   <div class="pick-list" id="draftCards"></div>
-  <div style="font-size:11px;color:#888">紅卡是詛咒：強，但有副作用</div>
+  <div style="font-size:11px;color:#888">藍=主動/被動強化 · 紅=詛咒（強但有副作用）</div>
 </div>
 
 <div class="screen" id="endScreen" style="display:none">
@@ -170,14 +172,17 @@ const Audio = (()=>{
     bluff:()=>{ blip(330,0.08,'triangle',0.06); setTimeout(()=>blip(495,0.12,'triangle',0.06),60); },
     phase:()=>sweep(200,800,0.2,'sine',0.06),
     magnet:()=>blip(660,0.15,'sine',0.06),
+    lure:()=>{ blip(440,0.1,'sine',0.05); setTimeout(()=>blip(330,0.15,'sine',0.05),100); },
+    repel:()=>noise(0.25,0.1),
+    decoy:()=>blip(550,0.08,'triangle',0.06),
+    warp:()=>sweep(800,200,0.4,'sine',0.06),
+    chomp:()=>{ blip(220,0.05,'sawtooth',0.08); setTimeout(()=>blip(660,0.08,'square',0.08),50); },
     damage:()=>blip(80,0.1,'sawtooth',0.08),
     pick:()=>blip(1200,0.05,'square',0.06),
     draft:()=>{ blip(660,0.06); setTimeout(()=>blip(880,0.06),60); setTimeout(()=>blip(1100,0.1),120); },
     cdready:()=>blip(1500,0.04,'square',0.04),
   };
 })();
-
-// sound toggle
 const sndBtn = document.getElementById('soundBtn');
 sndBtn.addEventListener('click', ()=>{
   const on = !Audio.enabled();
@@ -185,14 +190,12 @@ sndBtn.addEventListener('click', ()=>{
   sndBtn.textContent = on ? '🔊 ON' : '🔇 OFF';
 });
 
-// ---------- High score ----------
+// ---------- Highscore ----------
 const LB_KEY='pixelDevour.scores';
 function loadScores(){ try{ return JSON.parse(localStorage.getItem(LB_KEY))||[]; }catch(e){ return []; } }
 function saveScore(entry){
-  const list=loadScores();
-  list.push(entry);
-  list.sort((a,b)=>b.score-a.score);
-  list.length=Math.min(5,list.length);
+  const list=loadScores(); list.push(entry);
+  list.sort((a,b)=>b.score-a.score); list.length=Math.min(5,list.length);
   localStorage.setItem(LB_KEY, JSON.stringify(list));
   return list;
 }
@@ -202,38 +205,48 @@ function renderLB(rootId, highlightIdx=-1){
   ol.innerHTML='';
   if(list.length===0){
     const li=document.createElement('li'); li.style.justifyContent='center'; li.style.color='#666';
-    li.textContent='— 還沒有紀錄 —'; ol.appendChild(li);
-    return;
+    li.textContent='— 還沒有紀錄 —'; ol.appendChild(li); return;
   }
   list.forEach((e,i)=>{
     const li=document.createElement('li');
     if(i===highlightIdx) li.classList.add('me');
-    li.innerHTML=`<span class="rank">#${i+1}</span>
-      <span>${e.won?'★':' '} ${e.eats}吞 / R${e.size}</span>
-      <span class="score">${e.score}</span>`;
+    li.innerHTML=`<span class="rank">#${i+1}</span><span>${e.won?'★':' '} ${e.eats}吞 / R${e.size}</span><span class="score">${e.score}</span>`;
     ol.appendChild(li);
   });
 }
 
 // ---------- Constants ----------
-const MAP=1800;
-const AI_COUNT=16;
-const FOOD_COUNT=60;
+const MAP=2200;
+const AI_COUNT=24;
+const FOOD_COUNT=90;
 const PIXEL=4;
 
+// 10 active abilities
 const ABILITIES = {
-  blink:  { name:"BLINK",   desc:"瞬移一段距離\n躲開大球或追上小球", cd:3.5 },
-  dash:   { name:"DASH",    desc:"短時間爆發加速\n適合追擊與逃命",  cd:4.5 },
-  bluff:  { name:"BLUFF",   desc:"視覺上變兩倍大 3 秒\n嚇退 AI",    cd:6 },
-  phase:  { name:"PHASE",   desc:"無敵 1.2 秒\n暫時不會被吃",       cd:7 },
-  magnet: { name:"MAGNET",  desc:"吸引附近食物 2.5 秒",             cd:8 },
+  blink:  { name:"BLINK",  desc:"瞬移 140 距離",            cd:3.5 },
+  dash:   { name:"DASH",   desc:"加速 0.7s\n撞大球啃下一塊",  cd:4.5 },
+  bluff:  { name:"BLUFF",  desc:"視覺體積 x2\n持續 3s 嚇 AI", cd:6 },
+  phase:  { name:"PHASE",  desc:"無敵 1.2s\n不會被吃",        cd:7 },
+  magnet: { name:"MAGNET", desc:"吸引 300 內食物 2.5s",       cd:8 },
+  lure:   { name:"LURE",   desc:"吸引敵人靠近你 2s\n設陷阱",  cd:7 },
+  repel:  { name:"REPEL",  desc:"震退 280 內所有東西",        cd:6 },
+  decoy:  { name:"DECOY",  desc:"原地放假分身\n顯示為 1.8 倍體積\n持續 4s", cd:9 },
+  warp:   { name:"WARP",   desc:"其他人速度 0.4 倍\n持續 1.8s", cd:9 },
+  chomp:  { name:"CHOMP",  desc:"猛撲 80 距離\n0.4s 內可吃略大球", cd:5 },
 };
 
-const CURSES = {
-  glutton:    { name:"暴食",    desc:"吃下去 +30% 體積\n但每秒會掉 0.4 體積" },
-  sprinter:   { name:"狂奔",    desc:"速度 +25%\n但體積永遠不超過 30" },
-  bloodlust:  { name:"嗜血",    desc:"每次吞噬 +1 額外體積\n但 AI 老遠就看見你" },
-  frenzy:     { name:"瘋狂",    desc:"所有技能 CD -40%\n但死圈傷害 +60%" },
+// 10 passive mods (6 buffs + 4 curses)
+const MODS = {
+  spikes:    { type:'buff',  name:"尖刺",     desc:"接觸大球削對方體積\n你不會因此被吃" },
+  satellites:{ type:'buff',  name:"衛星",     desc:"環繞小球\n撞敵人削體積、吞食物" },
+  slow:      { type:'buff',  name:"減速場",   desc:"180 內敵人速度 -30%" },
+  skin:      { type:'buff',  name:"硬皮",     desc:"死圈傷害 -40%" },
+  regen:     { type:'buff',  name:"再生",     desc:"場內每秒回 +0.4 體積" },
+  vamp:      { type:'buff',  name:"吸血",     desc:"吞噬獲得體積 +40%" },
+  glutton:   { type:'curse', name:"暴食",     desc:"吞噬 +30%\n但每秒掉 0.25 體積" },
+  frenzy:    { type:'curse', name:"瘋狂",     desc:"CD -35%\n但死圈傷害 +60%" },
+  sprinter:  { type:'curse', name:"狂奔",     desc:"速度 +25%\n但體積上限 30" },
+  bloodlust: { type:'curse', name:"嗜血",     desc:"每吞噬 +1 體積\n但 AI 看你 +50% 距離" },
 };
 
 // ---------- State ----------
@@ -250,37 +263,38 @@ function makeAI(){
     isPlayer:false, alive:true,
     personality:["greedy","timid","bully"][Math.floor(Math.random()*3)],
     wanderAng:Math.random()*Math.PI*2,
-    wanderT:0, phaseT:0, magnetT:0
+    wanderT:0, phaseT:0
   };
+}
+function newPlayer(abilityKey){
+  const mods={}; for(const k of Object.keys(MODS)) mods[k]=0;
+  return { x:MAP/2, y:MAP/2, vx:0, vy:0, r:14, isPlayer:true, alive:true,
+           ability:abilityKey, cd:0,
+           dashT:0, bluffT:0, phaseT:0, magnetT:0, lureT:0, chompT:0,
+           mods, satellites:[] };
 }
 function newState(abilityKey){
   const balls=[];
-  const player = { x:MAP/2, y:MAP/2, vx:0, vy:0, r:14, isPlayer:true, alive:true,
-                   ability:abilityKey, cd:0, dashT:0, bluffT:0, phaseT:0, magnetT:0,
-                   curses:{ glutton:0, sprinter:0, bloodlust:0, frenzy:0 } };
+  const player = newPlayer(abilityKey);
   balls.push(player);
-  for(let i=0;i<AI_COUNT;i++){ const a=makeAI(); balls.push(a); }
+  for(let i=0;i<AI_COUNT;i++) balls.push(makeAI());
   const foods=[];
-  for(let i=0;i<FOOD_COUNT;i++){
-    foods.push({ x:Math.random()*MAP, y:Math.random()*MAP, r:3+Math.random()*2 });
-  }
-  // irregular zone — N angle bins each with own noise
+  for(let i=0;i<FOOD_COUNT;i++) foods.push({ x:Math.random()*MAP, y:Math.random()*MAP, r:3+Math.random()*2 });
+  // irregular zone
   const N=24;
   const radii=new Array(N), targets=new Array(N), nPhase=new Array(N), nSpd=new Array(N);
   for(let i=0;i<N;i++){
-    radii[i]=MAP*0.6;
-    targets[i]=MAP*0.6;
+    radii[i]=MAP*0.6; targets[i]=MAP*0.6;
     nPhase[i]=Math.random()*Math.PI*2;
     nSpd[i]=0.25+Math.random()*0.4;
   }
   return {
-    balls, player, foods,
+    balls, player, foods, decoys:[], effects:[],
     cam:{x:player.x,y:player.y},
     zone:{ cx:MAP/2, cy:MAP/2, N, radii, targets, nPhase, nSpd, base:MAP*0.6 },
     t:0, over:false, eatCount:0, endgameMode:false, paused:false,
-    pendingDraftPick:0, draft:null,
-    nextDraftAt:3,
-    damageT:0,
+    pendingDraftPick:0, draft:null, nextDraftAt:3,
+    damageT:0, warpT:0, avgSize:14
   };
 }
 
@@ -325,8 +339,7 @@ function updateJoy(t){
 }
 abilityBtn.addEventListener('click',useAbility);
 abilityBtn.addEventListener('touchstart',e=>{
-  e.preventDefault();
-  e.stopPropagation();
+  e.preventDefault(); e.stopPropagation();
   useAbility();
 },{passive:false});
 
@@ -337,7 +350,7 @@ cv.addEventListener('mouseup',()=>{ mouseTarget=null; });
 cv.addEventListener('mouseleave',()=>{ mouseTarget=null; });
 
 // ---------- Ability ----------
-function cdMult(p){ return Math.max(0.15, 1 - 0.35*p.curses.frenzy); }
+function cdMult(p){ return Math.max(0.15, 1 - 0.35*p.mods.frenzy); }
 function useAbility(){
   if(!state || state.over || state.paused) return;
   const p=state.player;
@@ -345,29 +358,80 @@ function useAbility(){
   const dir=getInputDir(true);
   const ang=Math.atan2(dir.y,dir.x);
   const cm=cdMult(p);
-  if(p.ability==='blink'){
-    p.x += Math.cos(ang)*140;
-    p.y += Math.sin(ang)*140;
-    clampToMap(p);
-    p.cd = ABILITIES.blink.cd*cm;
-    Audio.blink();
-  } else if(p.ability==='dash'){
-    p.dashT = 0.7;
-    p.cd = ABILITIES.dash.cd*cm;
-    Audio.dash();
-  } else if(p.ability==='bluff'){
-    p.bluffT = 3;
-    p.cd = ABILITIES.bluff.cd*cm;
-    Audio.bluff();
-  } else if(p.ability==='phase'){
-    p.phaseT = 1.2;
-    p.cd = ABILITIES.phase.cd*cm;
-    Audio.phase();
-  } else if(p.ability==='magnet'){
-    p.magnetT = 2.5;
-    p.cd = ABILITIES.magnet.cd*cm;
-    Audio.magnet();
+  switch(p.ability){
+    case 'blink':
+      p.x += Math.cos(ang)*140; p.y += Math.sin(ang)*140;
+      clampToMap(p);
+      p.cd = ABILITIES.blink.cd*cm;
+      Audio.blink();
+      break;
+    case 'dash':
+      p.dashT = 0.7;
+      p.cd = ABILITIES.dash.cd*cm;
+      Audio.dash();
+      break;
+    case 'bluff':
+      p.bluffT = 3;
+      p.cd = ABILITIES.bluff.cd*cm;
+      Audio.bluff();
+      break;
+    case 'phase':
+      p.phaseT = 1.2;
+      p.cd = ABILITIES.phase.cd*cm;
+      Audio.phase();
+      break;
+    case 'magnet':
+      p.magnetT = 2.5;
+      p.cd = ABILITIES.magnet.cd*cm;
+      Audio.magnet();
+      break;
+    case 'lure':
+      p.lureT = 2;
+      p.cd = ABILITIES.lure.cd*cm;
+      Audio.lure();
+      break;
+    case 'repel':
+      doRepel(p);
+      p.cd = ABILITIES.repel.cd*cm;
+      Audio.repel();
+      break;
+    case 'decoy':
+      state.decoys.push({ x:p.x, y:p.y, fakeR:p.r*1.8, life:4 });
+      p.cd = ABILITIES.decoy.cd*cm;
+      Audio.decoy();
+      break;
+    case 'warp':
+      state.warpT = 1.8;
+      p.cd = ABILITIES.warp.cd*cm;
+      Audio.warp();
+      break;
+    case 'chomp':
+      p.x += Math.cos(ang)*80; p.y += Math.sin(ang)*80; clampToMap(p);
+      p.chompT = 0.4;
+      p.cd = ABILITIES.chomp.cd*cm;
+      Audio.chomp();
+      break;
   }
+}
+
+function doRepel(p){
+  for(const b of state.balls){
+    if(b===p || !b.alive) continue;
+    const dx=b.x-p.x, dy=b.y-p.y, d=Math.hypot(dx,dy);
+    if(d<280 && d>1){
+      const force = (1-d/280)*180;
+      b.x += dx/d*force; b.y += dy/d*force;
+      clampToMap(b);
+    }
+  }
+  for(const f of state.foods){
+    const dx=f.x-p.x, dy=f.y-p.y, d=Math.hypot(dx,dy);
+    if(d<280 && d>1){
+      const force = (1-d/280)*120;
+      f.x += dx/d*force; f.y += dy/d*force;
+    }
+  }
+  state.effects.push({ kind:'repel', x:p.x, y:p.y, t:0.6, max:0.6 });
 }
 
 function getInputDir(forAbility=false){
@@ -384,12 +448,11 @@ function getInputDir(forAbility=false){
   const m=Math.hypot(dx,dy);
   if(m>1){ dx/=m; dy/=m; }
   if(m===0 && state){
-    // default: drift toward map center
     const p=state.player;
     let cx=MAP/2-p.x, cy=MAP/2-p.y;
     const cd=Math.hypot(cx,cy);
     if(cd<6) return forAbility?{x:1,y:0}:{x:0,y:0};
-    return { x:cx/cd*0.5, y:cy/cd*0.5 };  // half-speed drift
+    return { x:cx/cd*0.5, y:cy/cd*0.5 };
   }
   return {x:dx,y:dy};
 }
@@ -400,15 +463,20 @@ function clampToMap(b){
   b.y=Math.max(b.r,Math.min(MAP-b.r,b.y));
 }
 function speedFor(b){
-  let baseSpd = 220 / (1 + b.r/14);
+  let s = 220 / (1 + b.r/14);
   if(b.isPlayer){
-    baseSpd *= (1 + 0.25*b.curses.sprinter);
-    // underdog: smaller than average → speed boost
-    if(state && state.avgSize && b.r < state.avgSize*0.8) baseSpd *= 1.3;
+    s *= (1 + 0.25*b.mods.sprinter);
+    if(state && state.avgSize && b.r < state.avgSize*0.8) s *= 1.3; // underdog
+    if(b.chompT>0) s *= 1.8;
+  } else {
+    if(state.warpT>0) s *= 0.4;
+    if(state.player.alive && state.player.mods.slow>0){
+      const d = Math.hypot(b.x-state.player.x, b.y-state.player.y);
+      if(d<180) s *= Math.max(0.4, 1 - 0.3*state.player.mods.slow);
+    }
   }
-  return baseSpd;
+  return s;
 }
-function isUnderdog(p){ return state.avgSize && p.r < state.avgSize*0.8; }
 function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
 function visualR(b){ return b.bluffT>0 ? b.r*2 : b.r; }
 function zoneRadiusAt(angle){
@@ -426,22 +494,21 @@ function inZone(x,y){
   if(d<10) return true;
   return d <= zoneRadiusAt(Math.atan2(dy,dx));
 }
+function isUnderdog(p){ return state.avgSize && p.r < state.avgSize*0.8; }
 
 // ---------- Update ----------
 function update(dt){
   if(state.over || state.paused) return;
   state.t += dt;
 
-  // average size — for underdog logic
   const aliveAll = state.balls.filter(b=>b.alive);
   state.avgSize = aliveAll.reduce((a,b)=>a+b.r,0) / Math.max(1,aliveAll.length);
-
   const aliveCount=aliveAll.length;
-  if(aliveCount<=5 && !state.endgameMode){ state.endgameMode=true; }
+  if(aliveCount<=5 && !state.endgameMode) state.endgameMode=true;
 
-  // zone shrink — irregular
+  // zone shrink
   const z=state.zone;
-  const shrinkSpd = state.endgameMode ? 12 : 5;
+  const shrinkSpd = state.endgameMode ? 14 : 6;
   z.base = Math.max(140, z.base - shrinkSpd*dt);
   for(let i=0;i<z.N;i++){
     const wob = Math.sin(state.t*z.nSpd[i] + z.nPhase[i]);
@@ -453,10 +520,10 @@ function update(dt){
   while(state.foods.length<FOOD_COUNT){
     state.foods.push({ x:Math.random()*MAP, y:Math.random()*MAP, r:3+Math.random()*2 });
   }
-  // trickle AI (until endgame)
+  // AI trickle
   if(!state.endgameMode){
     const aliveAI = state.balls.filter(b=>!b.isPlayer && b.alive).length;
-    if(aliveAI < AI_COUNT-6 && Math.random()<dt*0.4){
+    if(aliveAI < AI_COUNT-8 && Math.random()<dt*0.5){
       let sx,sy,tries=0;
       do{ sx=Math.random()*MAP; sy=Math.random()*MAP; tries++; }
       while(tries<10 && Math.hypot(sx-state.player.x,sy-state.player.y)<400);
@@ -464,7 +531,20 @@ function update(dt){
     }
   }
 
-  // player movement
+  // global timers
+  if(state.warpT>0) state.warpT-=dt;
+  // decoys decay
+  for(let i=state.decoys.length-1;i>=0;i--){
+    state.decoys[i].life -= dt;
+    if(state.decoys[i].life<=0) state.decoys.splice(i,1);
+  }
+  // effects
+  for(let i=state.effects.length-1;i>=0;i--){
+    state.effects[i].t -= dt;
+    if(state.effects[i].t<=0) state.effects.splice(i,1);
+  }
+
+  // player movement & timers
   const p=state.player;
   if(p.alive){
     const dir=getInputDir(false);
@@ -478,25 +558,40 @@ function update(dt){
     if(p.bluffT>0) p.bluffT-=dt;
     if(p.phaseT>0) p.phaseT-=dt;
     if(p.magnetT>0) p.magnetT-=dt;
-    // glutton decay
-    if(p.curses.glutton>0) p.r -= 0.25*p.curses.glutton*dt;
+    if(p.lureT>0) p.lureT-=dt;
+    if(p.chompT>0) p.chompT-=dt;
+
+    // mods passive ticks
+    if(p.mods.glutton>0) p.r -= 0.25*p.mods.glutton*dt;
+    if(p.mods.regen>0 && inZone(p.x,p.y)) p.r += 0.4*p.mods.regen*dt;
+    if(p.mods.sprinter>0 && p.r>30) p.r=30;
     // underdog food rain
     if(isUnderdog(p) && Math.random()<dt*1.6){
       const ang=Math.random()*Math.PI*2;
       const dst=80+Math.random()*220;
       state.foods.push({ x:p.x+Math.cos(ang)*dst, y:p.y+Math.sin(ang)*dst, r:3+Math.random()*3 });
     }
-    // sprinter cap
-    if(p.curses.sprinter>0 && p.r>30) p.r=30;
     if(p.r<5){ p.alive=false; endGame(false,"暴食詛咒掏空了你"); }
+
+    // satellites
+    while(p.satellites.length < p.mods.satellites){
+      p.satellites.push({ ang: Math.random()*Math.PI*2, x:p.x, y:p.y, r:5 });
+    }
+    while(p.satellites.length > p.mods.satellites) p.satellites.pop();
+    const orbitR = p.r + 22;
+    for(const sat of p.satellites){
+      sat.ang += dt * 2.8;
+      sat.x = p.x + Math.cos(sat.ang)*orbitR;
+      sat.y = p.y + Math.sin(sat.ang)*orbitR;
+    }
   }
 
-  // AI
+  // AI movement
   for(const b of state.balls){
     if(b.isPlayer || !b.alive) continue;
     if(b.bluffT>0) b.bluffT-=dt;
-    // bloodlust amplifies how visible player is
-    const playerVisMult = 1 + 0.5*p.curses.bloodlust;
+    if(b.phaseT>0) b.phaseT-=dt;
+    const playerVisMult = 1 + 0.5*p.mods.bloodlust;
 
     const sense = 280 + b.r*4;
     let prey=null, threat=null, prDist=1e9, thDist=1e9;
@@ -505,14 +600,28 @@ function update(dt){
       const d=dist(b,o);
       const localSense = (o.isPlayer? sense*playerVisMult : sense);
       if(d>localSense) continue;
-      const apparent = visualR(o);
-      // phase: not seen as threat or prey while invuln
       if(o.phaseT>0) continue;
+      const apparent = visualR(o);
       if(apparent > b.r*1.05){ if(d<thDist){threat=o; thDist=d;} }
       else if(o.r < b.r*0.95){ if(d<prDist){prey=o; prDist=d;} }
     }
+    // decoys appear as threats
+    for(const dec of state.decoys){
+      const d=Math.hypot(b.x-dec.x,b.y-dec.y);
+      if(d<sense && dec.fakeR>b.r*1.05){
+        if(d<thDist){ threat={x:dec.x,y:dec.y}; thDist=d; }
+      }
+    }
 
     let tx=0,ty=0,weight=0;
+    // lure overrides — strongly attracts toward player
+    if(p.alive && p.lureT>0){
+      const d=dist(b,p);
+      if(d<500){
+        const w=2.8*(1-d/500);
+        tx += (p.x-b.x)*w; ty += (p.y-b.y)*w; weight+=w;
+      }
+    }
     if(threat){
       const w = (b.personality==='timid'?1.6:1.0) * (1 - thDist/sense);
       tx += (b.x-threat.x)*w; ty += (b.y-threat.y)*w; weight+=w;
@@ -521,12 +630,10 @@ function update(dt){
       const w = (b.personality==='greedy'?1.4:b.personality==='bully'?1.2:0.9) * (1 - prDist/sense);
       tx += (prey.x-b.x)*w; ty += (prey.y-b.y)*w; weight+=w;
     }
-    // zone awareness
     if(!inZone(b.x,b.y)){
       const cx=MAP/2-b.x, cy=MAP/2-b.y;
       tx += cx*1.0; ty += cy*1.0; weight+=1.0;
     } else {
-      // edge-of-zone fear
       const ang=Math.atan2(b.y-MAP/2, b.x-MAP/2);
       const zr=zoneRadiusAt(ang);
       const dC=Math.hypot(b.x-MAP/2,b.y-MAP/2);
@@ -535,7 +642,6 @@ function update(dt){
         tx += cx*0.6; ty += cy*0.6; weight+=0.6;
       }
     }
-
     b.wanderT -= dt;
     if(b.wanderT<=0){ b.wanderAng=Math.random()*Math.PI*2; b.wanderT=1+Math.random()*2; }
     if(weight<0.1){ tx=Math.cos(b.wanderAng); ty=Math.sin(b.wanderAng); weight=1; }
@@ -547,14 +653,13 @@ function update(dt){
     clampToMap(b);
   }
 
-  // food eating (with magnet for player)
+  // food eating (with magnet)
   if(p.alive && p.magnetT>0){
     for(const f of state.foods){
       const d=Math.hypot(p.x-f.x, p.y-f.y);
-      if(d<300){
+      if(d<300 && d>1){
         const k=(1-d/300)*180*dt;
-        f.x += (p.x-f.x)/d*k;
-        f.y += (p.y-f.y)/d*k;
+        f.x += (p.x-f.x)/d*k; f.y += (p.y-f.y)/d*k;
       }
     }
   }
@@ -563,9 +668,36 @@ function update(dt){
     for(let fi=state.foods.length-1; fi>=0; fi--){
       const f=state.foods[fi];
       if(Math.hypot(b.x-f.x,b.y-f.y) < b.r+f.r){
-        b.r = Math.sqrt(b.r*b.r + f.r*f.r*0.6);
+        let factor = 0.6;
+        if(b.isPlayer) factor *= (1 + 0.4*b.mods.vamp);
+        b.r = Math.sqrt(b.r*b.r + f.r*f.r*factor);
         state.foods.splice(fi,1);
         if(b.isPlayer) Audio.food();
+      }
+    }
+  }
+  // satellites eat food + chip enemies
+  if(p.alive){
+    for(const sat of p.satellites){
+      for(let fi=state.foods.length-1;fi>=0;fi--){
+        const f=state.foods[fi];
+        if(Math.hypot(sat.x-f.x, sat.y-f.y)<sat.r+f.r){
+          p.r = Math.sqrt(p.r*p.r + f.r*f.r*0.4);
+          state.foods.splice(fi,1);
+        }
+      }
+      for(const b of state.balls){
+        if(b.isPlayer || !b.alive) continue;
+        if(Math.hypot(sat.x-b.x, sat.y-b.y) < sat.r+b.r){
+          b.r -= 6*dt;
+          if(b.r<5){
+            b.alive=false;
+            state.eatCount++;
+            if(state.eatCount >= state.nextDraftAt){
+              state.pendingDraftPick++; state.nextDraftAt += 3;
+            }
+          }
+        }
       }
     }
   }
@@ -580,24 +712,34 @@ function update(dt){
         let big, small;
         if(a.r > c.r){ big=a; small=c; } else { big=c; small=a; }
         if(big.r <= small.r*1.05) continue;
-        // small is invuln: dash or phase
-        const smallSafe = small.dashT>0 || small.phaseT>0;
+        // chomp lets player eat balls up to 1.4x own size
+        if(small.isPlayer && small.chompT>0 && big.r < small.r*1.4){
+          eat(small, big); continue;
+        }
+        const smallSafe = small.dashT>0 || small.phaseT>0 || (small.isPlayer && small.chompT>0);
         if(smallSafe){
           if(small.isPlayer){
-            // chip bite: steal from big, push apart
             const steal = Math.min(6, big.r*0.3);
             big.r = Math.max(5, big.r - steal);
             small.r = Math.sqrt(small.r*small.r + steal*steal*0.5);
             const dx=small.x-big.x, dy=small.y-big.y;
             const dd=Math.hypot(dx,dy)||1;
             small.x += dx/dd*12; small.y += dy/dd*12;
-            // big also stunned away briefly
             big.x -= dx/dd*4; big.y -= dy/dd*4;
             clampToMap(small); clampToMap(big);
             Audio.bigEat();
-            // ensure no instant re-trigger
-            small.dashT = Math.max(0, small.dashT - 0.25);
+            if(small.dashT>0) small.dashT = Math.max(0, small.dashT - 0.25);
           }
+          continue;
+        }
+        // spikes: prevent eating, chip big over time
+        if(small.isPlayer && small.mods.spikes>0){
+          big.r = Math.max(5, big.r - small.mods.spikes*8*dt);
+          // gentle separation
+          const dx=small.x-big.x, dy=small.y-big.y;
+          const dd=Math.hypot(dx,dy)||1;
+          small.x += dx/dd*1.2; small.y += dy/dd*1.2;
+          clampToMap(small);
           continue;
         }
         eat(big, small);
@@ -610,27 +752,26 @@ function update(dt){
     if(!b.alive) continue;
     if(!inZone(b.x,b.y)){
       let dmg = 4;
-      if(b.isPlayer) dmg *= (1 + 0.6*b.curses.frenzy);
-      b.r -= dmg*dt;
       if(b.isPlayer){
+        dmg *= (1 + 0.6*b.mods.frenzy);
+        dmg *= Math.max(0.2, 1 - 0.4*b.mods.skin);
         state.damageT = 0.18;
       }
+      b.r -= dmg*dt;
       if(b.r<5){ b.alive=false; if(b.isPlayer) endGame(false,"被死圈吞噬"); }
     }
   }
   if(state.damageT>0){ state.damageT-=dt; document.getElementById('damageFlash').classList.add('show'); }
   else { document.getElementById('damageFlash').classList.remove('show'); }
 
-  // win check
+  // win
   if(p.alive){
     const aliveOthers = state.balls.filter(b=>b.alive && !b.isPlayer).length;
     if(aliveOthers===0) endGame(true);
   }
 
   // pending draft
-  if(p.alive && state.pendingDraftPick>0 && !state.draft){
-    openDraft();
-  }
+  if(p.alive && state.pendingDraftPick>0 && !state.draft) openDraft();
 
   // camera
   state.cam.x += (p.x - state.cam.x)*Math.min(1, dt*4);
@@ -647,31 +788,34 @@ function update(dt){
   abilityBtn.disabled = p.cd>0;
   abilityBtn.textContent = p.cd>0 ? Math.ceil(p.cd) : ab.name;
 
-  // curse list
-  const csEl=document.getElementById('curses');
-  const cs=Object.entries(p.curses).filter(([k,v])=>v>0).map(([k,v])=>CURSES[k].name+(v>1?` x${v}`:''));
-  csEl.textContent = cs.length? '詛咒: '+cs.join(' · ') : '';
+  const modsEl=document.getElementById('mods');
+  const parts=[];
+  for(const k of Object.keys(p.mods)){
+    if(p.mods[k]>0){
+      const def=MODS[k];
+      const cls = def.type==='curse'?'c':'b';
+      parts.push(`<span class="${cls}">${def.name}${p.mods[k]>1?'×'+p.mods[k]:''}</span>`);
+    }
+  }
+  modsEl.innerHTML = parts.length? parts.join(' · ') : '';
 
-  // zone warn
   document.getElementById('zoneWarn').classList.toggle('show', p.alive && !inZone(p.x,p.y));
 }
 
 function eat(big, small){
   small.alive=false;
   let factor = 0.7;
-  if(big.isPlayer) factor *= (1 + 0.3*big.curses.glutton);
+  if(big.isPlayer){
+    factor *= (1 + 0.3*big.mods.glutton) * (1 + 0.4*big.mods.vamp);
+  }
   big.r = Math.sqrt(big.r*big.r + small.r*small.r * factor);
   if(big.isPlayer){
-    big.r += big.curses.bloodlust; // flat bonus per curse
+    big.r += big.mods.bloodlust;
     state.eatCount++;
     if(small.r > big.r*0.5) Audio.bigEat(); else Audio.eat();
-    // draft trigger
     if(state.eatCount >= state.nextDraftAt){
-      state.pendingDraftPick++;
-      state.nextDraftAt += 3;
+      state.pendingDraftPick++; state.nextDraftAt += 3;
     }
-  } else if(big.isPlayer===false && small.isPlayer===false){
-    // AI eating AI — no sound (off-screen perhaps)
   }
   if(small.isPlayer){ Audio.death(); endGame(false, "你被吃了"); }
 }
@@ -680,11 +824,9 @@ function eat(big, small){
 function openDraft(){
   state.paused=true;
   state.pendingDraftPick--;
-  // pool: all abilities + all curses
   const pool=[];
   for(const k of Object.keys(ABILITIES)) pool.push({type:'ability',key:k});
-  for(const k of Object.keys(CURSES)) pool.push({type:'curse',key:k});
-  // shuffle pick 3, ensure mix: at least 2 abilities, at least 1 curse if possible
+  for(const k of Object.keys(MODS))      pool.push({type:'mod',    key:k});
   shuffle(pool);
   const cards=pool.slice(0,3);
   state.draft={ cards };
@@ -695,11 +837,19 @@ function openDraft(){
   const list=document.getElementById('draftCards');
   list.innerHTML='';
   cards.forEach(c=>{
-    const def = c.type==='ability' ? ABILITIES[c.key] : CURSES[c.key];
+    let def, cls, tag, cdLine='';
+    if(c.type==='ability'){
+      def = ABILITIES[c.key];
+      cls = 'pick-card buff';
+      tag = '主動 · ABILITY';
+      cdLine = `\nCD ${def.cd}s`;
+    } else {
+      def = MODS[c.key];
+      cls = 'pick-card '+(def.type==='curse'?'curse':'buff');
+      tag = def.type==='curse' ? '詛咒 · CURSE' : '被動 · PASSIVE';
+    }
     const btn=document.createElement('button');
-    btn.className='pick-card'+(c.type==='curse'?' curse':'');
-    const tag = c.type==='ability'? '主動 · ABILITY' : '詛咒 · CURSE';
-    const cdLine = c.type==='ability'? `\nCD ${def.cd}s` : '';
+    btn.className=cls;
     btn.innerHTML=`<span class="tag">${tag}</span><b>${def.name}</b>${def.desc.replace(/\n/g,'<br>')}${cdLine}`;
     btn.onclick=()=>pickDraft(c);
     list.appendChild(btn);
@@ -710,9 +860,9 @@ function pickDraft(c){
   Audio.pick();
   if(c.type==='ability'){
     state.player.ability=c.key;
-    state.player.cd = ABILITIES[c.key].cd*0.5; // brief CD on swap
+    state.player.cd = ABILITIES[c.key].cd*0.5;
   } else {
-    state.player.curses[c.key]++;
+    state.player.mods[c.key]++;
   }
   state.draft=null;
   document.getElementById('draftScreen').style.display='none';
@@ -743,45 +893,48 @@ function pxRing(cx,cy,r,fill){
     }
   }
 }
-
 function drawAIFace(s,b){
   const r=b.r;
   ctx.fillStyle='#000';
   if(b.personality==='greedy'){
-    // open mouth wedge — chomp
     ctx.beginPath();
     ctx.arc(s.x, s.y, r*0.85, -0.6, 0.6);
-    ctx.lineTo(s.x, s.y);
-    ctx.closePath();
+    ctx.lineTo(s.x, s.y); ctx.closePath();
     ctx.fill();
-    // tiny eye
     ctx.fillRect(Math.floor(s.x-r/2), Math.floor(s.y-r/2), PIXEL, PIXEL);
   } else if(b.personality==='timid'){
-    // small narrow eyes shifted
     ctx.fillRect(Math.floor(s.x-r/1.8), Math.floor(s.y-r/3), PIXEL, PIXEL);
     ctx.fillRect(Math.floor(s.x+r/3), Math.floor(s.y-r/3), PIXEL, PIXEL);
-    // worried mouth
     ctx.fillRect(Math.floor(s.x-r/4), Math.floor(s.y+r/3), Math.max(PIXEL, r/2), PIXEL/2);
-  } else { // bully
-    // angry slanted brows
-    ctx.save();
-    ctx.translate(s.x-r/2.4, s.y-r/3);
-    ctx.rotate(0.4);
-    ctx.fillRect(0,0, r*0.5, PIXEL);
-    ctx.restore();
-    ctx.save();
-    ctx.translate(s.x+r/2.4, s.y-r/3);
-    ctx.rotate(-0.4);
-    ctx.fillRect(-r*0.5,0, r*0.5, PIXEL);
-    ctx.restore();
-    // teeth bar
+  } else {
+    ctx.save(); ctx.translate(s.x-r/2.4, s.y-r/3); ctx.rotate(0.4);
+    ctx.fillRect(0,0, r*0.5, PIXEL); ctx.restore();
+    ctx.save(); ctx.translate(s.x+r/2.4, s.y-r/3); ctx.rotate(-0.4);
+    ctx.fillRect(-r*0.5,0, r*0.5, PIXEL); ctx.restore();
     ctx.fillRect(Math.floor(s.x-r/3), Math.floor(s.y+r/4), Math.floor(r*0.66), PIXEL);
-    // small horns
     ctx.fillRect(Math.floor(s.x-r/2), Math.floor(s.y-r*0.95), PIXEL, PIXEL*2);
     ctx.fillRect(Math.floor(s.x+r/2-PIXEL), Math.floor(s.y-r*0.95), PIXEL, PIXEL*2);
   }
 }
-
+function drawSpikes(s, p){
+  const n = Math.min(12, 6 + p.mods.spikes*2);
+  const len = 6 + p.mods.spikes*3;
+  ctx.fillStyle='#fff';
+  for(let i=0;i<n;i++){
+    const a = i*Math.PI*2/n + state.t*0.6;
+    const x1 = s.x + Math.cos(a)*p.r;
+    const y1 = s.y + Math.sin(a)*p.r;
+    const x2 = s.x + Math.cos(a)*(p.r+len);
+    const y2 = s.y + Math.sin(a)*(p.r+len);
+    const sa = 0.18;
+    ctx.beginPath();
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(s.x+Math.cos(a-sa)*p.r, s.y+Math.sin(a-sa)*p.r);
+    ctx.lineTo(s.x+Math.cos(a+sa)*p.r, s.y+Math.sin(a+sa)*p.r);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
 function tracePolygonPath(){
   const z=state.zone;
   for(let i=0;i<=z.N;i++){
@@ -798,7 +951,6 @@ function tracePolygonPath(){
 function render(){
   ctx.fillStyle='#0a0a0a';
   ctx.fillRect(0,0,W,H);
-
   // grid
   ctx.strokeStyle='#181818'; ctx.lineWidth=1;
   const step=80;
@@ -808,21 +960,16 @@ function render(){
   for(let x=ox;x<W;x+=step){ ctx.moveTo(x,0); ctx.lineTo(x,H); }
   for(let y=oy;y<H;y+=step){ ctx.moveTo(0,y); ctx.lineTo(W,y); }
   ctx.stroke();
-
   // border
   const tl=world2screen(0,0), br=world2screen(MAP,MAP);
   ctx.strokeStyle='#444'; ctx.lineWidth=2;
   ctx.strokeRect(tl.x,tl.y,br.x-tl.x,br.y-tl.y);
-
-  // zone (outside fill via even-odd)
+  // zone
   ctx.save();
   ctx.fillStyle='rgba(140,30,30,0.22)';
-  ctx.beginPath();
-  ctx.rect(0,0,W,H);
-  tracePolygonPath();
+  ctx.beginPath(); ctx.rect(0,0,W,H); tracePolygonPath();
   ctx.fill('evenodd');
   ctx.restore();
-  // zone outline
   ctx.beginPath(); tracePolygonPath();
   ctx.strokeStyle='#bb3333'; ctx.lineWidth=2; ctx.stroke();
 
@@ -834,34 +981,82 @@ function render(){
     ctx.fillRect(Math.floor(s.x-PIXEL/2), Math.floor(s.y-PIXEL/2), PIXEL, PIXEL);
   }
 
+  // decoys
+  for(const dec of state.decoys){
+    const s=world2screen(dec.x,dec.y);
+    const flick = (Math.sin(state.t*15)+1)/2 * 0.4 + 0.5;
+    ctx.globalAlpha = flick;
+    pxCircle(s.x,s.y,dec.fakeR,'#aaaaaa');
+    ctx.globalAlpha = 1;
+    pxRing(s.x,s.y,dec.fakeR,'rgba(255,255,255,0.5)');
+  }
+
+  // player slow-aura ring (drawn under balls)
+  const p = state.player;
+  if(p.alive && p.mods.slow>0){
+    const sp=world2screen(p.x,p.y);
+    ctx.strokeStyle='rgba(150,200,255,0.25)';
+    ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(sp.x,sp.y,180,0,Math.PI*2); ctx.stroke();
+  }
+  // lure pulse
+  if(p.alive && p.lureT>0){
+    const sp=world2screen(p.x,p.y);
+    const r = 500 - p.lureT*100;
+    ctx.strokeStyle=`rgba(255,200,80,${p.lureT/2*0.5})`;
+    ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(sp.x,sp.y, 500-r, 0, Math.PI*2); ctx.stroke();
+  }
+
+  // effects (repel ring)
+  for(const ef of state.effects){
+    if(ef.kind==='repel'){
+      const sp=world2screen(ef.x,ef.y);
+      const prog=1 - ef.t/ef.max;
+      const rad = prog*280;
+      ctx.strokeStyle=`rgba(255,255,255,${(1-prog)*0.6})`;
+      ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(sp.x,sp.y,rad,0,Math.PI*2); ctx.stroke();
+    }
+  }
+
   // balls
   const sorted=[...state.balls].filter(b=>b.alive).sort((a,b)=>a.r-b.r);
   for(const b of sorted){
     const s=world2screen(b.x,b.y);
-    const vr=visualR(b);
-    if(b.bluffT>0){ pxRing(s.x,s.y,vr,'rgba(255,255,255,0.35)'); }
-    if(b.phaseT>0){
-      // phase: dashed shimmer
-      pxRing(s.x,s.y,b.r+PIXEL*2,'rgba(180,220,255,0.6)');
-    }
+    if(b.bluffT>0) pxRing(s.x,s.y,visualR(b),'rgba(255,255,255,0.35)');
+    if(b.phaseT>0) pxRing(s.x,s.y,b.r+PIXEL*2,'rgba(180,220,255,0.6)');
     const fill = b.isPlayer ? '#ffffff' : (b.personality==='bully'?'#cccccc':b.personality==='timid'?'#bbbbbb':'#dddddd');
     pxCircle(s.x,s.y,b.r,fill);
     if(b.isPlayer){
       pxCircle(s.x,s.y,Math.max(2,b.r/3),'#000');
-      // tiny highlight pixel
       ctx.fillStyle='#fff';
       ctx.fillRect(Math.floor(s.x-b.r/3), Math.floor(s.y-b.r/3), PIXEL, PIXEL);
+      if(b.mods.spikes>0) drawSpikes(s,b);
+      if(b.chompT>0) pxRing(s.x,s.y,b.r+PIXEL*3,'rgba(255,255,150,0.6)');
     } else {
       drawAIFace(s,b);
     }
-    if(b.dashT>0){ pxRing(s.x,s.y,b.r+PIXEL*2,'rgba(255,255,255,0.5)'); }
-    // magnet visualization
+    if(b.dashT>0) pxRing(s.x,s.y,b.r+PIXEL*2,'rgba(255,255,255,0.5)');
     if(b.isPlayer && b.magnetT>0){
       ctx.strokeStyle='rgba(180,220,255,0.25)';
       ctx.lineWidth=1;
-      ctx.beginPath();
-      ctx.arc(s.x,s.y,300,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(s.x,s.y,300,0,Math.PI*2); ctx.stroke();
     }
+  }
+
+  // satellites
+  if(p.alive){
+    for(const sat of p.satellites){
+      const ss=world2screen(sat.x,sat.y);
+      pxCircle(ss.x, ss.y, sat.r, '#ffffff');
+    }
+  }
+
+  // warp tint
+  if(state.warpT>0){
+    ctx.fillStyle=`rgba(120,180,255,${Math.min(0.18, state.warpT*0.1)})`;
+    ctx.fillRect(0,0,W,H);
   }
 
   // endgame arrows
@@ -928,8 +1123,7 @@ function endGame(won, reason){
   const entry = { score, eats:state.eatCount, size:finalSize, won, t:Math.round(state.t) };
   saveScore(entry);
   const list=loadScores();
-  const myIdx=list.findIndex(e=>e===entry || (e.score===entry.score && e.eats===entry.eats && e.size===entry.size));
-
+  const myIdx=list.findIndex(e=>e.score===entry.score && e.eats===entry.eats && e.size===entry.size);
   document.getElementById('endTitle').textContent = won ? 'YOU WIN' : 'YOU DIED';
   document.getElementById('endSub').textContent = won ? '吞噬了所有人' : (reason||'');
   document.getElementById('endStats').textContent =
@@ -948,7 +1142,6 @@ function restart(){
   state=null;
 }
 
-// init leaderboard on first load
 renderLB('lbStart');
 </script>
 </body>
