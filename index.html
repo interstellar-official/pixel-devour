@@ -309,7 +309,8 @@ function newPlayer(abilityKey){
            ability:abilityKey, cd:0,
            dashT:0, bluffT:0, phaseT:0, magnetT:0, lureT:0, chompT:0,
            mods, satellites:[], tentacles:[],
-           chewedBy:null, chewedT:0, struggleHits:0, postEscapeT:0 };
+           chewedBy:null, chewedT:0, struggleHits:0, postEscapeT:0,
+           focusT:0, ghostTrail:[] };
 }
 
 const SHOP_THRESHOLD = 25;
@@ -347,6 +348,7 @@ function newState(abilityKey){
     particles:[], shakeT:0, shakeMag:0,
     slowmoT:0, dodgeFlashT:0,
     dodgeCooldown: new Map(),
+    dodgeStreak:0, dodgeStreakT:0,
   };
 }
 
@@ -620,6 +622,23 @@ function triggerPerfectDodge(big){
   Audio.blink();
   spawnParticles(state.player.x, state.player.y, 12, '#ffffff');
   shake(3, 0.1);
+  // streak: 3 in a row → FOCUS
+  state.dodgeStreak++;
+  state.dodgeStreakT = 3;
+  if(state.dodgeStreak >= 3){
+    triggerFocus();
+    state.dodgeStreak = 0;
+  }
+}
+function triggerFocus(){
+  const p = state.player;
+  p.focusT = 1.5;
+  p.cd = 0;
+  Audio.win();
+  state.slowmoT = Math.max(state.slowmoT, 0.3);
+  state.dodgeFlashT = Math.max(state.dodgeFlashT, 0.4);
+  spawnParticles(p.x, p.y, 24, '#ffd700');
+  shake(8, 0.18);
 }
 
 function spikeKill(big){
@@ -679,6 +698,11 @@ function update(dt){
 
   // global timers
   if(state.warpT>0) state.warpT-=dt;
+  // dodge streak decay
+  if(state.dodgeStreak>0){
+    state.dodgeStreakT -= dt;
+    if(state.dodgeStreakT<=0) state.dodgeStreak = 0;
+  }
   // combo decay
   if(state.combo>0){
     state.comboT -= dt;
@@ -778,6 +802,14 @@ function update(dt){
     if(p.lureT>0) p.lureT-=dt;
     if(p.chompT>0) p.chompT-=dt;
     if(p.postEscapeT>0) p.postEscapeT-=dt;
+    if(p.focusT>0){
+      p.focusT-=dt;
+      // afterimage capture every frame during focus
+      p.ghostTrail.push({x:p.x,y:p.y,r:p.r,life:0.5});
+      if(p.ghostTrail.length>10) p.ghostTrail.shift();
+    } else if(p.ghostTrail.length>0){
+      p.ghostTrail.length=0;
+    }
 
     // mods passive ticks
     if(p.mods.glutton>0) p.r -= 0.25*p.mods.glutton*dt;
@@ -1030,6 +1062,7 @@ function update(dt){
             small.chewedBy = big;
             small.chewedT = chewDuration(small, big);
             small.struggleHits = 0;
+            state.dodgeStreak = 0;
             Audio.damage();
             shake(8, 0.15);
           }
@@ -1389,6 +1422,18 @@ function render(){
     }
   }
 
+  // focus afterimages — drawn before balls so player on top
+  if(state.player.alive && state.player.ghostTrail.length){
+    for(let i=0;i<state.player.ghostTrail.length;i++){
+      const g = state.player.ghostTrail[i];
+      const fade = (i+1) / state.player.ghostTrail.length;
+      const sg = world2screen(g.x, g.y);
+      ctx.globalAlpha = fade*0.35;
+      pxCircle(sg.x, sg.y, g.r, '#ffd700');
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // balls
   const sorted=[...state.balls].filter(b=>b.alive).sort((a,b)=>a.r-b.r);
   for(const b of sorted){
@@ -1406,6 +1451,11 @@ function render(){
       if(b.postEscapeT>0){
         const pulse = 0.5 + 0.5*Math.sin(state.t*18);
         pxRing(s.x,s.y,b.r+PIXEL*4, `rgba(255,170,80,${0.4 + pulse*0.4})`);
+      }
+      if(b.focusT>0){
+        const pulse = 0.5 + 0.5*Math.sin(state.t*22);
+        pxRing(s.x,s.y,b.r+PIXEL*5, `rgba(255,215,0,${0.5 + pulse*0.5})`);
+        pxRing(s.x,s.y,b.r+PIXEL*8, `rgba(255,215,0,${0.2 + pulse*0.3})`);
       }
     } else {
       drawAIFace(s,b);
