@@ -521,6 +521,19 @@ function getInputDir(forAbility=false){
   if(m>1){ dx/=m; dy/=m; }
   if(m===0 && state){
     const p=state.player;
+    // auto-drift toward nearest food
+    let nf=null, nd=1e9;
+    for(const f of state.foods){
+      const fd=Math.hypot(p.x-f.x, p.y-f.y);
+      if(fd<nd){ nd=fd; nf=f; }
+    }
+    if(nf){
+      const dx=nf.x-p.x, dy=nf.y-p.y;
+      const d=Math.hypot(dx,dy);
+      if(d<4) return forAbility?{x:1,y:0}:{x:0,y:0};
+      return { x:dx/d*0.6, y:dy/d*0.6 };
+    }
+    // fallback: drift to center
     let cx=MAP/2-p.x, cy=MAP/2-p.y;
     const cd=Math.hypot(cx,cy);
     if(cd<6) return forAbility?{x:1,y:0}:{x:0,y:0};
@@ -570,7 +583,7 @@ function inZone(x,y){
 function isUnderdog(p){ return state.avgSize && p.r < state.avgSize*0.8; }
 
 // ---------- Feedback / FX ----------
-const STRUGGLE_THRESHOLD = 3;
+const STRUGGLE_THRESHOLD = 2;
 const POST_ESCAPE_DURATION = 1.5;
 const POST_ESCAPE_SPEED = 1.6;
 function chewDuration(small, big){
@@ -917,21 +930,35 @@ function update(dt){
     clampToMap(b);
   }
 
-  // food eating (with magnet)
-  if(p.alive && p.magnetT>0){
+  // food eating — built-in passive magnet + active magnet
+  if(p.alive){
+    // passive: gentle pull within 60 (always-on)
+    const passiveR = 60;
     for(const f of state.foods){
       const d=Math.hypot(p.x-f.x, p.y-f.y);
-      if(d<300 && d>1){
-        const k=(1-d/300)*180*dt;
+      if(d<passiveR && d>1){
+        const k=(1-d/passiveR)*120*dt;
         f.x += (p.x-f.x)/d*k; f.y += (p.y-f.y)/d*k;
+      }
+    }
+    // active: stronger pull within 300 when MAGNET skill on
+    if(p.magnetT>0){
+      for(const f of state.foods){
+        const d=Math.hypot(p.x-f.x, p.y-f.y);
+        if(d<300 && d>1){
+          const k=(1-d/300)*180*dt;
+          f.x += (p.x-f.x)/d*k; f.y += (p.y-f.y)/d*k;
+        }
       }
     }
   }
   for(const b of state.balls){
     if(!b.alive) continue;
+    // player has slightly larger eat radius for forgiving collection
+    const eatPad = b.isPlayer ? 6 : 0;
     for(let fi=state.foods.length-1; fi>=0; fi--){
       const f=state.foods[fi];
-      if(Math.hypot(b.x-f.x,b.y-f.y) < b.r+f.r){
+      if(Math.hypot(b.x-f.x,b.y-f.y) < b.r+f.r+eatPad){
         let factor = 0.6;
         if(b.isPlayer) factor *= (1 + 0.4*b.mods.vamp);
         b.r = Math.sqrt(b.r*b.r + f.r*f.r*factor);
