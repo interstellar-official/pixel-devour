@@ -319,7 +319,8 @@ function newPlayer(abilityKey){
            dashT:0, bluffT:0, phaseT:0, magnetT:0, lureT:0, chompT:0,
            mods, satellites:[], tentacles:[],
            chewedBy:null, chewedT:0, struggleHits:0, postEscapeT:0,
-           focusT:0, ghostTrail:[] };
+           focusT:0, ghostTrail:[],
+           luredAI:new Set(), luredKillBonus:0 };
 }
 
 const SHOP_THRESHOLD = 25;
@@ -584,6 +585,28 @@ function phaseExplode(p){
   Audio.phase();
 }
 
+function expireBluff(p){
+  // stun nearby AI 1s — they wander randomly
+  for(const b of state.balls){
+    if(b.isPlayer || !b.alive) continue;
+    if(Math.hypot(b.x-p.x, b.y-p.y) < 360){
+      b.stunT = 1;
+      b.wanderAng = Math.random()*Math.PI*2;
+      spawnParticles(b.x, b.y, 3, '#ffff88');
+    }
+  }
+  Audio.bluff();
+}
+
+function expireLure(p){
+  if(p.luredAI.size >= 3){
+    p.luredKillBonus = 0.5;
+    spawnFloat(p.x, p.y - p.r - 6, 'BAITED!', '#ffaa00');
+    Audio.lure();
+  }
+  p.luredAI.clear();
+}
+
 function decoyExplode(dec){
   // stun nearby AI + drop medium foods
   const R = 120;
@@ -659,6 +682,7 @@ function speedFor(b){
     if(state && state.avgSize && b.r < state.avgSize*0.8) s *= 1.3; // underdog
     if(b.chompT>0) s *= 1.8;
     if(b.postEscapeT>0) s *= POST_ESCAPE_SPEED;
+    if(state && state.warpT>0) s *= 1.3; // WARP also speeds up the caster
   } else {
     if(state.warpT>0) s *= 0.4;
     if(state.player.alive && state.player.mods.slow>0){
@@ -919,10 +943,16 @@ function update(dt){
       }
       // decay timers but skip normal movement input
       if(p.cd>0) p.cd-=dt;
-      if(p.bluffT>0) p.bluffT-=dt;
+      if(p.bluffT>0){
+        const wB=p.bluffT; p.bluffT-=dt;
+        if(wB>0.1 && p.bluffT<=0) expireBluff(p);
+      }
       if(p.phaseT>0) p.phaseT-=dt;
       if(p.magnetT>0) p.magnetT-=dt;
-      if(p.lureT>0) p.lureT-=dt;
+      if(p.lureT>0){
+        const wL=p.lureT; p.lureT-=dt;
+        if(wL>0.1 && p.lureT<=0) expireLure(p);
+      }
       if(p.chompT>0) p.chompT-=dt;
     }
   }
@@ -935,14 +965,27 @@ function update(dt){
     clampToMap(p);
     const wasCD = p.cd>0;
     if(p.cd>0){ p.cd-=dt; if(wasCD && p.cd<=0) Audio.cdready(); }
-    if(p.bluffT>0) p.bluffT-=dt;
+    if(p.bluffT>0){
+      const wasB = p.bluffT;
+      p.bluffT -= dt;
+      if(wasB>0.1 && p.bluffT<=0) expireBluff(p);
+    }
     if(p.phaseT>0){
       const wasPhase = p.phaseT;
       p.phaseT-=dt;
       if(wasPhase>0.8 && p.phaseT<=0) phaseExplode(p);
     }
     if(p.magnetT>0) p.magnetT-=dt;
-    if(p.lureT>0) p.lureT-=dt;
+    if(p.lureT>0){
+      const wasL = p.lureT;
+      // track which AI got close during the lure
+      for(const b of state.balls){
+        if(b.isPlayer || !b.alive) continue;
+        if(Math.hypot(b.x-p.x, b.y-p.y) < 500) p.luredAI.add(b);
+      }
+      p.lureT -= dt;
+      if(wasL>0.1 && p.lureT<=0) expireLure(p);
+    }
     if(p.chompT>0) p.chompT-=dt;
     if(p.postEscapeT>0) p.postEscapeT-=dt;
     if(p.focusT>0){
@@ -1058,6 +1101,19 @@ function update(dt){
     if(b.isPlayer || !b.alive) continue;
     if(b.bluffT>0) b.bluffT-=dt;
     if(b.phaseT>0) b.phaseT-=dt;
+    // BLUFF stun: panicked random wander, ignore targets
+    if(b.stunT>0){
+      b.stunT -= dt;
+      b.wanderT -= dt;
+      if(b.wanderT<=0){ b.wanderAng = Math.random()*Math.PI*2; b.wanderT = 0.25+Math.random()*0.3; }
+      const tx = Math.cos(b.wanderAng), ty = Math.sin(b.wanderAng);
+      const spd = speedFor(b)*0.7;
+      b.vx = tx*spd; b.vy = ty*spd;
+      b.x += b.vx*dt; b.y += b.vy*dt;
+      clampToMap(b);
+      if(Math.random() < dt*3) spawnParticles(b.x, b.y-b.r, 1, '#ffff88');
+      continue;
+    }
     const playerVisMult = 1 + 0.5*p.mods.bloodlust;
 
     const sense = 280 + b.r*4;
@@ -1151,6 +1207,16 @@ function update(dt){
         if(d<300 && d>1){
           const k=(1-d/300)*180*dt;
           f.x += (p.x-f.x)/d*k; f.y += (p.y-f.y)/d*k;
+        }
+      }
+      // also pull AI smaller than the player toward you (set up combos)
+      for(const b of state.balls){
+        if(b===p || !b.alive || b.r >= p.r*0.95) continue;
+        const d=Math.hypot(p.x-b.x, p.y-b.y);
+        if(d<300 && d>1){
+          const k=(1-d/300)*120*dt;
+          b.x += (p.x-b.x)/d*k; b.y += (p.y-b.y)/d*k;
+          if(Math.random()<dt*4) spawnParticles(b.x, b.y, 1, '#aaccff');
         }
       }
     }
@@ -1387,6 +1453,12 @@ function eat(big, small){
     if(wasBigger && big.mods.bigGameHunter>0) factor *= (1 + big.mods.bigGameHunter);
     // combo bonus
     factor *= (1 + 0.04 * Math.max(0, state.combo));
+    // LURE bonus: triggered when 3+ AI clustered during lure
+    if(big.luredKillBonus>0){
+      factor *= (1 + big.luredKillBonus);
+      spawnFloat(small.x, small.y, `+${(big.luredKillBonus*100)|0}%`, '#ffaa00');
+      big.luredKillBonus = 0;
+    }
   }
   big.r = Math.sqrt(big.r*big.r + small.r*small.r * factor);
   if(big.isPlayer){
