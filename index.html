@@ -16,9 +16,10 @@
   #mods .b{color:#9cf}
   #mods .c{color:#f99}
 
-  #joystick{position:fixed;left:20px;bottom:20px;width:120px;height:120px;border:2px solid #fff;border-radius:50%;background:rgba(255,255,255,.04);display:none;z-index:20;touch-action:none}
+  #joystick{position:fixed;width:120px;height:120px;border:2px solid #fff;border-radius:50%;background:rgba(255,255,255,.06);display:none;z-index:20;touch-action:none;pointer-events:none}
+  #joystick.show{display:block}
   #joystick .stick{position:absolute;left:50%;top:50%;width:48px;height:48px;background:#fff;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none}
-  #abilityBtn{position:fixed;right:24px;bottom:36px;width:88px;height:88px;border:2px solid #fff;border-radius:50%;background:rgba(255,255,255,.08);color:#fff;font-size:13px;display:none;z-index:20;letter-spacing:1px;font-family:inherit;font-weight:bold}
+  #abilityBtn{position:fixed;right:24px;bottom:80px;width:100px;height:100px;border:3px solid #fff;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:14px;display:none;z-index:20;letter-spacing:1px;font-family:inherit;font-weight:bold}
   #abilityBtn:disabled{opacity:.35}
   #abilityBtn:active{background:#fff;color:#000}
   #soundBtn{position:fixed;top:8px;right:8px;background:rgba(0,0,0,.6);border:1px solid #fff;color:#fff;padding:4px 8px;font-family:inherit;font-size:11px;cursor:pointer;z-index:11}
@@ -252,7 +253,15 @@ function renderLB(rootId, highlightIdx=-1){
 // ---------- Constants ----------
 const MAP=2200;
 const AI_COUNT=24;
-const FOOD_COUNT=90;
+const FOOD_COUNT=140;
+function makeFood(){
+  const roll=Math.random();
+  let r;
+  if(roll<0.7) r = 3 + Math.random()*1.5;        // small (70%)
+  else if(roll<0.95) r = 6 + Math.random()*2;    // medium (25%)
+  else r = 10 + Math.random()*3;                 // large (5%)
+  return { x:Math.random()*MAP, y:Math.random()*MAP, r };
+}
 const PIXEL=4;
 
 // 10 active abilities
@@ -328,7 +337,7 @@ function newState(abilityKey){
   balls.push(player);
   for(let i=0;i<AI_COUNT;i++) balls.push(makeAI());
   const foods=[];
-  for(let i=0;i<FOOD_COUNT;i++) foods.push({ x:Math.random()*MAP, y:Math.random()*MAP, r:3+Math.random()*2 });
+  for(let i=0;i<FOOD_COUNT;i++) foods.push(makeFood());
   // irregular zone
   const N=24;
   const radii=new Array(N), targets=new Array(N), nPhase=new Array(N), nSpd=new Array(N);
@@ -371,34 +380,60 @@ function registerStruggle(){
 const joy = document.getElementById('joystick');
 const stick = document.getElementById('stick');
 const abilityBtn = document.getElementById('abilityBtn');
-let joyVec={x:0,y:0}, joyId=null;
-if(isMobile){ joy.style.display='block'; abilityBtn.style.display='block'; }
-joy.addEventListener('touchstart',e=>{
-  e.preventDefault();
-  const t=e.changedTouches[0]; joyId=t.identifier;
-  updateJoy(t);
-  registerStruggle();
-},{passive:false});
-joy.addEventListener('touchmove',e=>{
-  e.preventDefault();
-  for(const t of e.changedTouches) if(t.identifier===joyId) updateJoy(t);
-},{passive:false});
-joy.addEventListener('touchend',e=>{
-  for(const t of e.changedTouches) if(t.identifier===joyId){
-    joyId=null; joyVec={x:0,y:0};
-    stick.style.left='50%'; stick.style.top='50%';
+let joyVec={x:0,y:0}, joyId=null, joyOriginX=0, joyOriginY=0;
+const JOY_HALF=60, JOY_MAX=50;
+if(isMobile){ abilityBtn.style.display='block'; }
+
+// Floating joystick: touch anywhere on left half of screen → joystick spawns there
+document.addEventListener('touchstart', e=>{
+  if(!isMobile) return;
+  for(const t of e.changedTouches){
+    // ignore touches over the ability button or any UI element with a button parent
+    if(t.target && t.target.closest('button')) continue;
+    if(joyId !== null) continue;
+    if(t.clientX < window.innerWidth*0.5){
+      e.preventDefault();
+      joyId = t.identifier;
+      joyOriginX = t.clientX; joyOriginY = t.clientY;
+      joy.style.left = (t.clientX - JOY_HALF) + 'px';
+      joy.style.top  = (t.clientY - JOY_HALF) + 'px';
+      joy.classList.add('show');
+      updateJoyFromTouch(t);
+      registerStruggle();
+    }
+  }
+}, {passive:false});
+document.addEventListener('touchmove', e=>{
+  if(joyId===null) return;
+  for(const t of e.changedTouches){
+    if(t.identifier===joyId){ e.preventDefault(); updateJoyFromTouch(t); }
+  }
+}, {passive:false});
+document.addEventListener('touchend', e=>{
+  for(const t of e.changedTouches){
+    if(t.identifier===joyId){
+      joyId=null; joyVec={x:0,y:0};
+      stick.style.left='50%'; stick.style.top='50%';
+      joy.classList.remove('show');
+    }
   }
 });
-function updateJoy(t){
-  const r=joy.getBoundingClientRect();
-  let dx=t.clientX-(r.left+r.width/2);
-  let dy=t.clientY-(r.top+r.height/2);
-  const max=r.width/2-10;
+document.addEventListener('touchcancel', e=>{
+  for(const t of e.changedTouches){
+    if(t.identifier===joyId){
+      joyId=null; joyVec={x:0,y:0};
+      stick.style.left='50%'; stick.style.top='50%';
+      joy.classList.remove('show');
+    }
+  }
+});
+function updateJoyFromTouch(t){
+  let dx=t.clientX-joyOriginX, dy=t.clientY-joyOriginY;
   const d=Math.hypot(dx,dy);
-  if(d>max){ dx=dx/d*max; dy=dy/d*max; }
-  stick.style.left=(50+dx/r.width*100)+'%';
-  stick.style.top=(50+dy/r.height*100)+'%';
-  joyVec.x=dx/max; joyVec.y=dy/max;
+  if(d>JOY_MAX){ dx=dx/d*JOY_MAX; dy=dy/d*JOY_MAX; }
+  stick.style.left=`calc(50% + ${dx}px)`;
+  stick.style.top=`calc(50% + ${dy}px)`;
+  joyVec.x=dx/JOY_MAX; joyVec.y=dy/JOY_MAX;
 }
 abilityBtn.addEventListener('click',()=>{ useAbility(); registerStruggle(); });
 abilityBtn.addEventListener('touchstart',e=>{
@@ -696,7 +731,7 @@ function update(dt){
 
   // food respawn
   while(state.foods.length<FOOD_COUNT){
-    state.foods.push({ x:Math.random()*MAP, y:Math.random()*MAP, r:3+Math.random()*2 });
+    state.foods.push(makeFood());
   }
   // AI trickle
   if(!state.endgameMode){
@@ -919,6 +954,19 @@ function update(dt){
         tx += cx*0.6; ty += cy*0.6; weight+=0.6;
       }
     }
+    // food seeking — when no strong target, head for the nearest food
+    if(weight < 0.5){
+      let nf=null, nd=1e9;
+      const fSense=sense*0.6;
+      for(const f of state.foods){
+        const fd=Math.hypot(b.x-f.x, b.y-f.y);
+        if(fd<fSense && fd<nd){ nd=fd; nf=f; }
+      }
+      if(nf){
+        const w = (0.5 + nf.r*0.05) * (1 - nd/fSense);
+        tx += (nf.x-b.x)*w; ty += (nf.y-b.y)*w; weight+=w;
+      }
+    }
     b.wanderT -= dt;
     if(b.wanderT<=0){ b.wanderAng=Math.random()*Math.PI*2; b.wanderT=1+Math.random()*2; }
     if(weight<0.1){ tx=Math.cos(b.wanderAng); ty=Math.sin(b.wanderAng); weight=1; }
@@ -963,7 +1011,12 @@ function update(dt){
         if(b.isPlayer) factor *= (1 + 0.4*b.mods.vamp);
         b.r = Math.sqrt(b.r*b.r + f.r*f.r*factor);
         state.foods.splice(fi,1);
-        if(b.isPlayer) Audio.food();
+        if(b.isPlayer){
+          Audio.food();
+          // big food: extra feedback
+          if(f.r>9){ spawnParticles(f.x,f.y,8,'#ffd700'); shake(2,0.06); }
+          else if(f.r>5){ spawnParticles(f.x,f.y,4,'#ffffff'); }
+        }
       }
     }
   }
@@ -1402,12 +1455,19 @@ function render(){
   ctx.beginPath(); tracePolygonPath();
   ctx.strokeStyle='#bb3333'; ctx.lineWidth=2; ctx.stroke();
 
-  // foods
-  ctx.fillStyle='#888';
+  // foods (size-tiered: small dot, medium block, large pixel-circle)
   for(const f of state.foods){
     const s=world2screen(f.x,f.y);
     if(s.x<-20||s.x>W+20||s.y<-20||s.y>H+20) continue;
-    ctx.fillRect(Math.floor(s.x-PIXEL/2), Math.floor(s.y-PIXEL/2), PIXEL, PIXEL);
+    if(f.r>9){
+      pxCircle(s.x, s.y, f.r, '#ffd700');
+      pxCircle(s.x, s.y, f.r*0.4, '#fff8c0');
+    } else if(f.r>5){
+      pxCircle(s.x, s.y, f.r, '#cccccc');
+    } else {
+      ctx.fillStyle='#888';
+      ctx.fillRect(Math.floor(s.x-PIXEL/2), Math.floor(s.y-PIXEL/2), PIXEL, PIXEL);
+    }
   }
 
   // decoys
