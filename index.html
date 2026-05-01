@@ -57,6 +57,20 @@
 
   @keyframes blink{50%{opacity:0}}
   .blink-anim{animation:blink 1s infinite}
+
+  #combo{position:fixed;top:60px;left:50%;transform:translateX(-50%);font-size:46px;font-weight:bold;letter-spacing:3px;text-shadow:0 0 16px currentColor,3px 3px 0 #000;color:#ffd700;opacity:0;transition:opacity .15s,transform .15s;pointer-events:none;z-index:6;font-family:"Courier New",monospace}
+  #combo.show{opacity:1;transform:translateX(-50%) scale(1.1)}
+  #combo .multi{font-size:30px;vertical-align:super}
+
+  #struggle{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:240px;text-align:center;z-index:7;display:none;pointer-events:none}
+  #struggle.show{display:block}
+  #struggle .title{font-size:22px;color:#ff4444;letter-spacing:4px;text-shadow:0 0 12px #ff4444;margin-bottom:8px;animation:blink .3s infinite}
+  #struggle .sub{font-size:11px;color:#fff;margin-bottom:8px;letter-spacing:2px}
+  #struggle .bar{height:14px;background:#220000;border:2px solid #ff4444;border-radius:8px;overflow:hidden}
+  #struggle .bar div{height:100%;background:linear-gradient(90deg,#ff4444,#ffaa00);width:0%;transition:width .08s}
+
+  #dodgeFlash{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center, rgba(255,255,255,0.5) 0%, transparent 60%);opacity:0;z-index:5;transition:opacity .25s}
+  #dodgeFlash.show{opacity:1}
 </style>
 </head>
 <body>
@@ -77,6 +91,13 @@
 
 <div id="zoneWarn">DEAD ZONE</div>
 <div id="damageFlash"></div>
+<div id="dodgeFlash"></div>
+<div id="combo">×<span id="comboN">2</span></div>
+<div id="struggle">
+  <div class="title">BEING EATEN</div>
+  <div class="sub">連點任意鍵 / 技能鈕 掙脫</div>
+  <div class="bar"><div id="struggleBar"></div></div>
+</div>
 
 <div class="screen" id="startScreen">
   <h1>PIXEL DEVOUR</h1>
@@ -84,7 +105,8 @@
   <p>吃比你小的球與食物豆變大，避開比你大的。<br>
      紅色死圈會不規則收縮。<br>
      每吃 3 顆三選一抽強化（<span style="color:#9cf">藍卡=強化</span> · <span style="color:#f99">紅卡=詛咒</span>）。<br>
-     <span style="color:#ffd700">10 種主動 / 10 種被動</span></p>
+     <span style="color:#ffd700">10 種主動 / 13 種被動</span><br>
+     被大球碰到時 <span style="color:#ff4444">連點掙脫</span> · 擦邊閃過觸發 <span style="color:#fff">PERFECT DODGE</span></p>
   <button class="go" onclick="rollAndStart()">START</button>
   <div style="font-size:11px;color:#666;line-height:1.6;margin-top:18px">
     桌機: WASD/方向鍵 · 空白鍵放技能<br>
@@ -247,18 +269,21 @@ const ABILITIES = {
   chomp:  { name:"CHOMP",  desc:"猛撲 80 距離\n0.4s 內可吃略大球", cd:5 },
 };
 
-// 10 passive mods (6 buffs + 4 curses)
+// passive mods: 9 buffs + 4 curses (added build-synergy mods: adrenaline, killerInst, bigGameHunter)
 const MODS = {
-  spikes:    { type:'buff',  name:"尖刺",     desc:"接觸大球削對方體積\n你不會因此被吃" },
-  satellites:{ type:'buff',  name:"衛星",     desc:"環繞小球\n撞敵人削體積、吞食物" },
-  slow:      { type:'buff',  name:"減速場",   desc:"180 內敵人速度 -30%" },
-  skin:      { type:'buff',  name:"硬皮",     desc:"死圈傷害 -40%" },
-  regen:     { type:'buff',  name:"再生",     desc:"場內每秒回 +0.4 體積" },
-  vamp:      { type:'buff',  name:"吸血",     desc:"吞噬獲得體積 +40%" },
-  glutton:   { type:'curse', name:"暴食",     desc:"吞噬 +30%\n但每秒掉 0.25 體積" },
-  frenzy:    { type:'curse', name:"瘋狂",     desc:"CD -35%\n但死圈傷害 +60%" },
-  sprinter:  { type:'curse', name:"狂奔",     desc:"速度 +25%\n但體積上限 30" },
-  bloodlust: { type:'curse', name:"嗜血",     desc:"每吞噬 +1 體積\n但 AI 看你 +50% 距離" },
+  spikes:        { type:'buff',  name:"尖刺",     desc:"接觸大球擦傷對方\n（仍會被吃，但同歸於盡）" },
+  satellites:    { type:'buff',  name:"衛星",     desc:"環繞小球\n撞敵人削體積、吞食物" },
+  slow:          { type:'buff',  name:"減速場",   desc:"180 內敵人速度 -30%" },
+  skin:          { type:'buff',  name:"硬皮",     desc:"死圈傷害 -40%" },
+  regen:         { type:'buff',  name:"再生",     desc:"場內每秒回 +0.4 體積" },
+  vamp:          { type:'buff',  name:"吸血",     desc:"吞噬獲得體積 +40%" },
+  adrenaline:    { type:'buff',  name:"腎上腺素", desc:"每吃 1 顆所有 CD -0.5s\n配 FRENZY 變施法狂" },
+  killerInst:    { type:'buff',  name:"殺意",     desc:"COMBO 每升 1 級\n永久 +0.5 體積" },
+  bigGameHunter: { type:'buff',  name:"獵巨",     desc:"吃掉與你同等或更大球\n獲得體積翻倍" },
+  glutton:       { type:'curse', name:"暴食",     desc:"吞噬 +30%\n但每秒掉 0.25 體積" },
+  frenzy:        { type:'curse', name:"瘋狂",     desc:"CD -35%\n但死圈傷害 +60%" },
+  sprinter:      { type:'curse', name:"狂奔",     desc:"速度 +25%\n但體積上限 30" },
+  bloodlust:     { type:'curse', name:"嗜血",     desc:"每吞噬 +1 體積\n但 AI 看你 +50% 距離" },
 };
 
 // ---------- State ----------
@@ -283,7 +308,8 @@ function newPlayer(abilityKey){
   return { x:MAP/2, y:MAP/2, vx:0, vy:0, r:14, isPlayer:true, alive:true,
            ability:abilityKey, cd:0,
            dashT:0, bluffT:0, phaseT:0, magnetT:0, lureT:0, chompT:0,
-           mods, satellites:[], tentacles:[] };
+           mods, satellites:[], tentacles:[],
+           chewedBy:null, chewedT:0, struggleHits:0, postEscapeT:0 };
 }
 
 const SHOP_THRESHOLD = 25;
@@ -316,17 +342,29 @@ function newState(abilityKey){
     zone:{ cx:MAP/2, cy:MAP/2, N, radii, targets, nPhase, nSpd, base:MAP*0.6 },
     t:0, over:false, eatCount:0, endgameMode:false, paused:false,
     pendingDraftPick:0, draft:null, nextDraftAt:3,
-    damageT:0, warpT:0, avgSize:14
+    damageT:0, warpT:0, avgSize:14,
+    combo:0, comboT:0, comboBest:0,
+    particles:[], shakeT:0, shakeMag:0,
+    slowmoT:0, dodgeFlashT:0,
+    dodgeCooldown: new Map(),
   };
 }
 
 // ---------- Input ----------
 const keys={};
 window.addEventListener('keydown',e=>{
+  if(e.repeat) return;
   keys[e.key.toLowerCase()]=true;
   if(e.key===' '){ e.preventDefault(); useAbility(); }
+  registerStruggle();
 });
 window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+
+function registerStruggle(){
+  if(state && state.player && state.player.chewedBy){
+    state.player.struggleHits++;
+  }
+}
 
 const joy = document.getElementById('joystick');
 const stick = document.getElementById('stick');
@@ -337,6 +375,7 @@ joy.addEventListener('touchstart',e=>{
   e.preventDefault();
   const t=e.changedTouches[0]; joyId=t.identifier;
   updateJoy(t);
+  registerStruggle();
 },{passive:false});
 joy.addEventListener('touchmove',e=>{
   e.preventDefault();
@@ -359,10 +398,11 @@ function updateJoy(t){
   stick.style.top=(50+dy/r.height*100)+'%';
   joyVec.x=dx/max; joyVec.y=dy/max;
 }
-abilityBtn.addEventListener('click',useAbility);
+abilityBtn.addEventListener('click',()=>{ useAbility(); registerStruggle(); });
 abilityBtn.addEventListener('touchstart',e=>{
   e.preventDefault(); e.stopPropagation();
   useAbility();
+  registerStruggle();
 },{passive:false});
 
 const shopBtn = document.getElementById('shopBtn');
@@ -384,6 +424,7 @@ function useAbility(){
   if(!state || state.over || state.paused) return;
   const p=state.player;
   if(!p.alive || p.cd>0) return;
+  if(p.chewedBy) return; // pinned: tap counts as struggle (handled elsewhere)
   const dir=getInputDir(true);
   const ang=Math.atan2(dir.y,dir.x);
   const cm=cdMult(p);
@@ -525,9 +566,82 @@ function inZone(x,y){
 }
 function isUnderdog(p){ return state.avgSize && p.r < state.avgSize*0.8; }
 
+// ---------- Feedback / FX ----------
+const STRUGGLE_THRESHOLD = 6;
+function chewDuration(small, big){
+  const ratio = Math.max(0.1, Math.min(1, small.r/big.r));
+  return 0.3 + ratio * 0.55; // 0.35 .. 0.85
+}
+function spawnParticles(x,y,n,color){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2;
+    const sp=60+Math.random()*180;
+    state.particles.push({
+      x, y,
+      vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+      life:0.4+Math.random()*0.3,
+      max:0.7,
+      color: color || '#ffffff',
+    });
+  }
+}
+function shake(mag,dur){
+  if(state.shakeMag<mag) state.shakeMag=mag;
+  state.shakeT = Math.max(state.shakeT, dur);
+}
+function bumpCombo(){
+  state.combo++;
+  state.comboT = 3;
+  if(state.combo>state.comboBest) state.comboBest=state.combo;
+  if(state.player.mods.killerInst>0){
+    state.player.r += 0.5 * state.player.mods.killerInst;
+  }
+  if(state.combo>1){
+    const el=document.getElementById('combo');
+    document.getElementById('comboN').textContent=state.combo;
+    // tier color
+    let col='#ffd700';
+    if(state.combo>=10) col='#ff44ff';
+    else if(state.combo>=5) col='#ff8844';
+    el.style.color=col;
+    el.classList.add('show');
+    clearTimeout(bumpCombo._t);
+    bumpCombo._t=setTimeout(()=>el.classList.remove('show'),1800);
+  }
+}
+function triggerPerfectDodge(big){
+  state.slowmoT = 0.28;
+  state.dodgeFlashT = 0.32;
+  bumpCombo();
+  Audio.cdready();
+  Audio.blink();
+  spawnParticles(state.player.x, state.player.y, 12, '#ffffff');
+  shake(3, 0.1);
+}
+
+function spikeKill(big){
+  big.alive=false;
+  state.eatCount++;
+  bumpCombo();
+  // tiny size payback so spike build still grows
+  const p=state.player;
+  p.r = Math.sqrt(p.r*p.r + 4*4*0.4);
+  if(p.mods.adrenaline>0) p.cd = Math.max(0, p.cd - 0.5*p.mods.adrenaline);
+  spawnParticles(big.x, big.y, 14, '#ff4444');
+  Audio.bigEat();
+  shake(8, 0.18);
+  if(state.eatCount >= state.nextDraftAt){
+    state.pendingDraftPick++; state.nextDraftAt += 3;
+  }
+}
+
 // ---------- Update ----------
 function update(dt){
   if(state.over || state.paused) return;
+  // slow-motion: scale down world dt while keeping real time for slowmoT decay
+  if(state.slowmoT>0){ state.slowmoT -= dt; dt *= 0.35; }
+  if(state.dodgeFlashT>0){ state.dodgeFlashT -= dt; document.getElementById('dodgeFlash').classList.add('show'); }
+  else document.getElementById('dodgeFlash').classList.remove('show');
   state.t += dt;
 
   const aliveAll = state.balls.filter(b=>b.alive);
@@ -562,6 +676,24 @@ function update(dt){
 
   // global timers
   if(state.warpT>0) state.warpT-=dt;
+  // combo decay
+  if(state.combo>0){
+    state.comboT -= dt;
+    if(state.comboT<=0){
+      state.combo = 0;
+      document.getElementById('combo').classList.remove('show');
+    }
+  }
+  // shake decay
+  if(state.shakeT>0){ state.shakeT-=dt; if(state.shakeT<=0) state.shakeMag=0; }
+  // particles
+  for(let i=state.particles.length-1;i>=0;i--){
+    const pt = state.particles[i];
+    pt.life -= dt;
+    if(pt.life<=0){ state.particles.splice(i,1); continue; }
+    pt.x += pt.vx*dt; pt.y += pt.vy*dt;
+    pt.vx *= (1 - 2.5*dt); pt.vy *= (1 - 2.5*dt);
+  }
   // decoys decay
   for(let i=state.decoys.length-1;i>=0;i--){
     state.decoys[i].life -= dt;
@@ -575,7 +707,57 @@ function update(dt){
 
   // player movement & timers
   const p=state.player;
-  if(p.alive){
+  let chewActive = false;
+  if(p.alive && p.chewedBy){
+    const big = p.chewedBy;
+    if(!big.alive){
+      // attacker died → freed
+      p.chewedBy = null;
+      p.struggleHits = 0;
+      p.phaseT = Math.max(p.phaseT, 0.4);
+    } else {
+      chewActive = true;
+      p.chewedT -= dt;
+      p.r -= 11*dt;
+      const dx = big.x-p.x, dy = big.y-p.y;
+      const d = Math.hypot(dx,dy)||1;
+      p.x += dx/d * 60 * dt;
+      p.y += dy/d * 60 * dt;
+      if(p.mods.spikes>0){
+        big.r -= p.mods.spikes*10*dt;
+        if(big.r<5){ spikeKill(big); /* chew loop next frame frees player */ }
+      }
+      clampToMap(p);
+      shake(2, 0.08);
+      if(p.struggleHits >= STRUGGLE_THRESHOLD){
+        p.r = Math.max(5, p.r - 3);
+        p.x -= dx/d * 36; p.y -= dy/d * 36;
+        clampToMap(p);
+        p.phaseT = Math.max(p.phaseT, 0.6);
+        p.chewedBy = null;
+        p.struggleHits = 0;
+        chewActive = false;
+        Audio.dash();
+        spawnParticles(p.x, p.y, 10, '#ffaa00');
+        shake(8, 0.18);
+      } else if(p.chewedT<=0 || p.r<5){
+        big.r = Math.sqrt(big.r*big.r + p.r*p.r*0.7);
+        p.alive=false;
+        p.chewedBy = null;
+        Audio.death();
+        shake(20, 0.4);
+        endGame(false, "被咀嚼吞噬");
+      }
+      // decay timers but skip normal movement input
+      if(p.cd>0) p.cd-=dt;
+      if(p.bluffT>0) p.bluffT-=dt;
+      if(p.phaseT>0) p.phaseT-=dt;
+      if(p.magnetT>0) p.magnetT-=dt;
+      if(p.lureT>0) p.lureT-=dt;
+      if(p.chompT>0) p.chompT-=dt;
+    }
+  }
+  if(p.alive && !chewActive){
     const dir=getInputDir(false);
     let spd = speedFor(p);
     if(p.dashT>0){ spd*=2.4; p.dashT-=dt; }
@@ -786,12 +968,26 @@ function update(dt){
     }
   }
 
-  // ball-vs-ball
+  // ball-vs-ball + perfect dodge detection
   for(let i=0;i<state.balls.length;i++){
     const a=state.balls[i]; if(!a.alive) continue;
     for(let j=i+1;j<state.balls.length;j++){
       const c=state.balls[j]; if(!c.alive) continue;
       const d=dist(a,c);
+      // perfect dodge: player passes within 8px of bigger ball's edge but no contact
+      if(p.alive && (a===p||c===p)){
+        const other = (a===p)?c:a;
+        if(other.r > p.r*1.05 && !p.chewedBy && p.phaseT<=0){
+          const margin = d - (other.r + p.r);
+          if(margin>0 && margin<10){
+            const last = state.dodgeCooldown.get(other) || 0;
+            if(state.t - last > 1.6){
+              state.dodgeCooldown.set(other, state.t);
+              triggerPerfectDodge(other);
+            }
+          }
+        }
+      }
       if(d < a.r+c.r-2){
         let big, small;
         if(a.r > c.r){ big=a; small=c; } else { big=c; small=a; }
@@ -816,14 +1012,20 @@ function update(dt){
           }
           continue;
         }
-        // spikes: prevent eating, chip big over time
+        // spike: passive chip on contact (does NOT prevent eat anymore — synergy with chew)
         if(small.isPlayer && small.mods.spikes>0){
-          big.r = Math.max(5, big.r - small.mods.spikes*8*dt);
-          // gentle separation
-          const dx=small.x-big.x, dy=small.y-big.y;
-          const dd=Math.hypot(dx,dy)||1;
-          small.x += dx/dd*1.2; small.y += dy/dd*1.2;
-          clampToMap(small);
+          big.r -= small.mods.spikes*8*dt;
+          if(big.r<5){ spikeKill(big); continue; }
+        }
+        // player gets chewed (gives struggle window) instead of insta-eaten
+        if(small.isPlayer){
+          if(!small.chewedBy){
+            small.chewedBy = big;
+            small.chewedT = chewDuration(small, big);
+            small.struggleHits = 0;
+            Audio.damage();
+            shake(8, 0.15);
+          }
           continue;
         }
         eat(big, small);
@@ -885,6 +1087,15 @@ function update(dt){
 
   document.getElementById('zoneWarn').classList.toggle('show', p.alive && !inZone(p.x,p.y));
 
+  // struggle UI
+  const strg = document.getElementById('struggle');
+  if(p.alive && p.chewedBy){
+    strg.classList.add('show');
+    document.getElementById('struggleBar').style.width = Math.min(100, p.struggleHits/STRUGGLE_THRESHOLD*100)+'%';
+  } else {
+    strg.classList.remove('show');
+  }
+
   // shop button visibility
   if(p.alive && p.r >= SHOP_THRESHOLD && !state.paused) shopBtn.classList.add('show');
   else shopBtn.classList.remove('show');
@@ -893,17 +1104,31 @@ function update(dt){
 function eat(big, small){
   small.alive=false;
   let factor = 0.7;
+  const wasBigger = small.r >= big.r * 0.95;
   if(big.isPlayer){
     factor *= (1 + 0.3*big.mods.glutton) * (1 + 0.4*big.mods.vamp);
+    // bigGameHunter: ate a same-or-bigger ball (only via chomp/spike chip) → double
+    if(wasBigger && big.mods.bigGameHunter>0) factor *= (1 + big.mods.bigGameHunter);
+    // combo bonus
+    factor *= (1 + 0.04 * Math.max(0, state.combo));
   }
   big.r = Math.sqrt(big.r*big.r + small.r*small.r * factor);
   if(big.isPlayer){
     big.r += big.mods.bloodlust;
     state.eatCount++;
-    if(small.r > big.r*0.5) Audio.bigEat(); else Audio.eat();
+    bumpCombo();
+    // adrenaline: each kill cuts current cd
+    if(big.mods.adrenaline>0) big.cd = Math.max(0, big.cd - 0.5*big.mods.adrenaline);
+    // particles + shake
+    const isBig = small.r > big.r*0.5;
+    if(isBig){ Audio.bigEat(); spawnParticles(small.x, small.y, 20, '#ffd700'); shake(10, 0.2); }
+    else { Audio.eat(); spawnParticles(small.x, small.y, 8, '#ffffff'); shake(3, 0.08); }
     if(state.eatCount >= state.nextDraftAt){
       state.pendingDraftPick++; state.nextDraftAt += 3;
     }
+  } else {
+    // AI eating something — small particle for visibility
+    spawnParticles(small.x, small.y, 4, '#888888');
   }
   if(small.isPlayer){ Audio.death(); endGame(false, "你被吃了"); }
 }
@@ -1079,6 +1304,15 @@ function tracePolygonPath(){
 function render(){
   ctx.fillStyle='#0a0a0a';
   ctx.fillRect(0,0,W,H);
+  // screen shake offset
+  let shx=0, shy=0;
+  if(state.shakeMag>0){
+    shx = (Math.random()*2-1)*state.shakeMag;
+    shy = (Math.random()*2-1)*state.shakeMag;
+    state.shakeMag *= 0.86;
+  }
+  ctx.save();
+  ctx.translate(shx, shy);
   // grid
   ctx.strokeStyle='#181818'; ctx.lineWidth=1;
   const step=80;
@@ -1230,6 +1464,38 @@ function render(){
       ctx.restore();
     }
   }
+
+  // particles
+  for(const pt of state.particles){
+    const s = world2screen(pt.x, pt.y);
+    const alpha = Math.max(0, Math.min(1, pt.life/pt.max));
+    ctx.fillStyle = pt.color;
+    ctx.globalAlpha = alpha;
+    const sz = 2 + alpha*PIXEL;
+    ctx.fillRect(Math.floor(s.x-sz/2), Math.floor(s.y-sz/2), sz, sz);
+  }
+  ctx.globalAlpha = 1;
+
+  // chew jaws — draw spike marks around the player while being eaten
+  if(state.player.alive && state.player.chewedBy){
+    const sp = world2screen(state.player.x, state.player.y);
+    const r = state.player.r;
+    ctx.strokeStyle='rgba(255,40,40,0.8)';
+    ctx.lineWidth=2;
+    const n = 8;
+    const wob = Math.sin(state.t*30)*3;
+    for(let i=0;i<n;i++){
+      const a = i*Math.PI*2/n;
+      const x1 = sp.x + Math.cos(a)*(r+4+wob);
+      const y1 = sp.y + Math.sin(a)*(r+4+wob);
+      const x2 = sp.x + Math.cos(a)*(r+12+wob);
+      const y2 = sp.y + Math.sin(a)*(r+12+wob);
+      ctx.beginPath();
+      ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    }
+  }
+
+  ctx.restore();
 }
 
 // ---------- Loop ----------
