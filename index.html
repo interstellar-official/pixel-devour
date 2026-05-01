@@ -325,9 +325,9 @@ function renderLB(rootId, highlightIdx=-1){
 }
 
 // ---------- Constants ----------
-const MAP=2200;
-const AI_COUNT=24;
-const FOOD_COUNT=140;
+const MAP=2000;
+const AI_COUNT=42;
+const FOOD_COUNT=200;
 function makeFood(){
   const roll=Math.random();
   let r;
@@ -966,13 +966,17 @@ function update(dt){
   while(state.foods.length<FOOD_COUNT){
     state.foods.push(makeFood());
   }
-  // AI trickle
+  // AI trickle — keep population dense
   if(!state.endgameMode){
     const aliveAI = state.balls.filter(b=>!b.isPlayer && b.alive).length;
-    if(aliveAI < AI_COUNT-8 && Math.random()<dt*0.5){
-      let sx,sy,tries=0;
-      do{ sx=Math.random()*MAP; sy=Math.random()*MAP; tries++; }
-      while(tries<10 && Math.hypot(sx-state.player.x,sy-state.player.y)<400);
+    const target = AI_COUNT - 2;        // sit just below max
+    const deficit = Math.max(0, target - aliveAI);
+    // chance scales with how far below max we are; multi-spawn possible per frame
+    const tries = Math.min(3, Math.floor(deficit*dt*4 + (Math.random() < deficit*dt*1.2 ? 1 : 0)));
+    for(let n=0;n<tries;n++){
+      let sx,sy,t=0;
+      do{ sx=Math.random()*MAP; sy=Math.random()*MAP; t++; }
+      while(t<10 && Math.hypot(sx-state.player.x,sy-state.player.y)<320);
       const a=makeAI(); a.x=sx; a.y=sy; state.balls.push(a);
     }
   }
