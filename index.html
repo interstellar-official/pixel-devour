@@ -23,6 +23,7 @@
   #abilityBtn:disabled{opacity:.35}
   #abilityBtn:active{background:#fff;color:#000}
   #soundBtn{position:fixed;top:8px;right:8px;background:rgba(0,0,0,.6);border:1px solid #fff;color:#fff;padding:4px 8px;font-family:inherit;font-size:11px;cursor:pointer;z-index:11}
+  #vibBtn{position:fixed;top:8px;right:88px;background:rgba(0,0,0,.6);border:1px solid #fff;color:#fff;padding:4px 8px;font-family:inherit;font-size:11px;cursor:pointer;z-index:11;display:none}
   #shopBtn{position:fixed;top:40px;right:8px;background:#0a0a0a;border:1px solid #ffd700;color:#ffd700;padding:6px 10px;font-family:inherit;font-size:12px;cursor:pointer;z-index:11;display:none;letter-spacing:2px;font-weight:bold}
   #shopBtn.show{display:block;animation:blink 1.4s infinite}
   #shopBtn:active{background:#ffd700;color:#000}
@@ -85,6 +86,7 @@
 </div>
 
 <button id="soundBtn">🔊 ON</button>
+<button id="vibBtn">📳 ON</button>
 <button id="shopBtn">🛒 SHOP</button>
 
 <div id="joystick"><div class="stick" id="stick"></div></div>
@@ -224,6 +226,46 @@ sndBtn.addEventListener('click', ()=>{
   Audio.setEnabled(on);
   sndBtn.textContent = on ? '🔊 ON' : '🔇 OFF';
 });
+
+const vibBtn = document.getElementById('vibBtn');
+// ---------- Haptic (Android Web Vibration API; iOS silently no-ops) ----------
+const Haptic = (()=>{
+  let enabled = isMobile;
+  const supported = 'vibrate' in navigator;
+  function vib(pattern){
+    if(!enabled || !supported) return;
+    try{ navigator.vibrate(pattern); }catch(e){}
+  }
+  return {
+    supported(){ return supported; },
+    setEnabled(v){ enabled=v; if(!v && supported) navigator.vibrate(0); },
+    enabled(){ return enabled; },
+    eat:    ()=>vib(8),
+    bigEat: ()=>vib(28),
+    chew:   ()=>vib(50),
+    escape: ()=>vib([40,20,60]),
+    dodge:  ()=>vib(18),
+    focus:  ()=>vib([40,30,60,30,80]),
+    boom:   ()=>vib(60),
+    repel:  ()=>vib(40),
+    damage: ()=>vib(15),
+    death:  ()=>vib(200),
+    win:    ()=>vib([60,60,60,60,120]),
+    levelUp:()=>vib([20,30,40]),
+  };
+})();
+
+// show/wire vib button only when API exists (still display on mobile fall-through to no-op)
+if(Haptic.supported() || isMobile){
+  vibBtn.style.display='block';
+  vibBtn.textContent = Haptic.enabled() ? '📳 ON' : '📴 OFF';
+  vibBtn.addEventListener('click', ()=>{
+    const on = !Haptic.enabled();
+    Haptic.setEnabled(on);
+    vibBtn.textContent = on ? '📳 ON' : '📴 OFF';
+    if(on) Haptic.dodge(); // tiny test buzz on enable
+  });
+}
 
 // ---------- Highscore ----------
 const LB_KEY='pixelDevour.scores';
@@ -554,6 +596,7 @@ function doRepel(p){
   }
   state.effects.push({ kind:'repel', x:p.x, y:p.y, t:0.6, max:0.6 });
   shake(8, 0.18);
+  Haptic.repel();
 }
 
 function phaseExplode(p){
@@ -583,6 +626,7 @@ function phaseExplode(p){
   state.effects.push({ kind:'phaseburst', x:p.x, y:p.y, t:0.5, max:0.5 });
   shake(10, 0.22);
   Audio.phase();
+  Haptic.boom();
 }
 
 function expireBluff(p){
@@ -772,6 +816,7 @@ function triggerPerfectDodge(big){
   bumpCombo();
   Audio.cdready();
   Audio.blink();
+  Haptic.dodge();
   spawnParticles(state.player.x, state.player.y, 12, '#ffffff');
   shake(3, 0.1);
   // streak: 3 in a row → FOCUS
@@ -787,6 +832,7 @@ function triggerFocus(){
   p.focusT = 1.5;
   p.cd = 0;
   Audio.win();
+  Haptic.focus();
   state.slowmoT = Math.max(state.slowmoT, 0.3);
   state.dodgeFlashT = Math.max(state.dodgeFlashT, 0.4);
   spawnParticles(p.x, p.y, 24, '#ffd700');
@@ -930,6 +976,7 @@ function update(dt){
         chewActive = false;
         Audio.dash();
         Audio.cdready();
+        Haptic.escape();
         spawnParticles(p.x, p.y, 18, '#ffaa00');
         shake(10, 0.22);
         state.slowmoT = Math.max(state.slowmoT, 0.18);
@@ -938,6 +985,7 @@ function update(dt){
         p.alive=false;
         p.chewedBy = null;
         Audio.death();
+        Haptic.death();
         shake(20, 0.4);
         endGame(false, "被咀嚼吞噬");
       }
@@ -1366,6 +1414,7 @@ function update(dt){
             small.struggleHits = 0;
             state.dodgeStreak = 0;
             Audio.damage();
+            Haptic.chew();
             shake(8, 0.15);
           }
           continue;
@@ -1474,8 +1523,8 @@ function eat(big, small){
     if(big.mods.vamp>0) spawnParticles(big.x, big.y, 4 + big.mods.vamp*2, '#ff5555');
     // particles + shake
     const isBig = small.r > big.r*0.5;
-    if(isBig){ Audio.bigEat(); spawnParticles(small.x, small.y, 20, '#ffd700'); shake(10, 0.2); }
-    else { Audio.eat(); spawnParticles(small.x, small.y, 8, '#ffffff'); shake(3, 0.08); }
+    if(isBig){ Audio.bigEat(); Haptic.bigEat(); spawnParticles(small.x, small.y, 20, '#ffd700'); shake(10, 0.2); }
+    else { Audio.eat(); Haptic.eat(); spawnParticles(small.x, small.y, 8, '#ffffff'); shake(3, 0.08); }
     if(state.eatCount >= state.nextDraftAt){
       state.pendingDraftPick++; state.nextDraftAt += 3;
     }
@@ -1483,7 +1532,7 @@ function eat(big, small){
     // AI eating something — small particle for visibility
     spawnParticles(small.x, small.y, 4, '#888888');
   }
-  if(small.isPlayer){ Audio.death(); endGame(false, "你被吃了"); }
+  if(small.isPlayer){ Audio.death(); Haptic.death(); endGame(false, "你被吃了"); }
 }
 
 // ---------- Draft ----------
@@ -1942,7 +1991,7 @@ function commitStart(){
 function endGame(won, reason){
   if(state.over) return;
   state.over=true;
-  if(won) Audio.win();
+  if(won){ Audio.win(); Haptic.win(); } else { Haptic.death(); }
   const finalSize=Math.round(state.player.r);
   const score = state.eatCount*15 + finalSize*3 + (won?500:0);
   const entry = { score, eats:state.eatCount, size:finalSize, won, t:Math.round(state.t) };
