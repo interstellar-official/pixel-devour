@@ -538,6 +538,7 @@ function speedFor(b){
     s *= (1 + 0.25*b.mods.sprinter);
     if(state && state.avgSize && b.r < state.avgSize*0.8) s *= 1.3; // underdog
     if(b.chompT>0) s *= 1.8;
+    if(b.postEscapeT>0) s *= POST_ESCAPE_SPEED;
   } else {
     if(state.warpT>0) s *= 0.4;
     if(state.player.alive && state.player.mods.slow>0){
@@ -567,7 +568,9 @@ function inZone(x,y){
 function isUnderdog(p){ return state.avgSize && p.r < state.avgSize*0.8; }
 
 // ---------- Feedback / FX ----------
-const STRUGGLE_THRESHOLD = 6;
+const STRUGGLE_THRESHOLD = 3;
+const POST_ESCAPE_DURATION = 1.5;
+const POST_ESCAPE_SPEED = 1.6;
 function chewDuration(small, big){
   const ratio = Math.max(0.1, Math.min(1, small.r/big.r));
   return 0.3 + ratio * 0.55; // 0.35 .. 0.85
@@ -730,16 +733,19 @@ function update(dt){
       clampToMap(p);
       shake(2, 0.08);
       if(p.struggleHits >= STRUGGLE_THRESHOLD){
-        p.r = Math.max(5, p.r - 3);
-        p.x -= dx/d * 36; p.y -= dy/d * 36;
+        p.r = Math.max(5, p.r - 2);
+        p.x -= dx/d * 60; p.y -= dy/d * 60;
         clampToMap(p);
-        p.phaseT = Math.max(p.phaseT, 0.6);
+        p.phaseT = Math.max(p.phaseT, 1.2);
+        p.postEscapeT = POST_ESCAPE_DURATION;
         p.chewedBy = null;
         p.struggleHits = 0;
         chewActive = false;
         Audio.dash();
-        spawnParticles(p.x, p.y, 10, '#ffaa00');
-        shake(8, 0.18);
+        Audio.cdready();
+        spawnParticles(p.x, p.y, 18, '#ffaa00');
+        shake(10, 0.22);
+        state.slowmoT = Math.max(state.slowmoT, 0.18);
       } else if(p.chewedT<=0 || p.r<5){
         big.r = Math.sqrt(big.r*big.r + p.r*p.r*0.7);
         p.alive=false;
@@ -771,6 +777,7 @@ function update(dt){
     if(p.magnetT>0) p.magnetT-=dt;
     if(p.lureT>0) p.lureT-=dt;
     if(p.chompT>0) p.chompT-=dt;
+    if(p.postEscapeT>0) p.postEscapeT-=dt;
 
     // mods passive ticks
     if(p.mods.glutton>0) p.r -= 0.25*p.mods.glutton*dt;
@@ -1396,6 +1403,10 @@ function render(){
       ctx.fillRect(Math.floor(s.x-b.r/3), Math.floor(s.y-b.r/3), PIXEL, PIXEL);
       if(b.mods.spikes>0) drawSpikes(s,b);
       if(b.chompT>0) pxRing(s.x,s.y,b.r+PIXEL*3,'rgba(255,255,150,0.6)');
+      if(b.postEscapeT>0){
+        const pulse = 0.5 + 0.5*Math.sin(state.t*18);
+        pxRing(s.x,s.y,b.r+PIXEL*4, `rgba(255,170,80,${0.4 + pulse*0.4})`);
+      }
     } else {
       drawAIFace(s,b);
     }
