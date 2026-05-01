@@ -354,7 +354,7 @@ function newState(abilityKey){
     pendingDraftPick:0, draft:null, nextDraftAt:3,
     damageT:0, warpT:0, avgSize:14,
     combo:0, comboT:0, comboBest:0,
-    particles:[], shakeT:0, shakeMag:0,
+    particles:[], floats:[], shakeT:0, shakeMag:0,
     slowmoT:0, dodgeFlashT:0,
     dodgeCooldown: new Map(),
     dodgeStreak:0, dodgeStreakT:0,
@@ -528,6 +528,19 @@ function doRepel(p){
     if(d<280 && d>1){
       const force = (1-d/280)*180;
       b.x += dx/d*force; b.y += dy/d*force;
+      // chip damage scaling with proximity
+      const chip = (1-d/280)*8 + 2;
+      b.r -= chip;
+      spawnParticles(b.x, b.y, 4, '#ffffff');
+      if(b.r<5){
+        b.alive=false;
+        state.eatCount++;
+        bumpCombo();
+        spawnParticles(b.x, b.y, 12, '#ffffff');
+        if(state.eatCount >= state.nextDraftAt){
+          state.pendingDraftPick++; state.nextDraftAt += 3;
+        }
+      }
       clampToMap(b);
     }
   }
@@ -539,6 +552,63 @@ function doRepel(p){
     }
   }
   state.effects.push({ kind:'repel', x:p.x, y:p.y, t:0.6, max:0.6 });
+  shake(8, 0.18);
+}
+
+function phaseExplode(p){
+  // AoE around player when PHASE expires
+  const R = p.r + 80;
+  for(const b of state.balls){
+    if(b===p || !b.alive) continue;
+    const dx=b.x-p.x, dy=b.y-p.y, d=Math.hypot(dx,dy);
+    if(d<R && d>1){
+      const knock = (1-d/R)*140;
+      b.x += dx/d*knock; b.y += dy/d*knock;
+      const chip = (1-d/R)*10;
+      b.r -= chip;
+      spawnParticles(b.x,b.y,3,'#88ccff');
+      if(b.r<5){
+        b.alive=false;
+        state.eatCount++;
+        bumpCombo();
+        spawnParticles(b.x,b.y,12,'#88ccff');
+        if(state.eatCount >= state.nextDraftAt){
+          state.pendingDraftPick++; state.nextDraftAt += 3;
+        }
+      }
+      clampToMap(b);
+    }
+  }
+  state.effects.push({ kind:'phaseburst', x:p.x, y:p.y, t:0.5, max:0.5 });
+  shake(10, 0.22);
+  Audio.phase();
+}
+
+function decoyExplode(dec){
+  // stun nearby AI + drop medium foods
+  const R = 120;
+  for(const b of state.balls){
+    if(b.isPlayer || !b.alive) continue;
+    const dx=b.x-dec.x, dy=b.y-dec.y, d=Math.hypot(dx,dy);
+    if(d<R){
+      // brief stun (force wander redirection)
+      b.wanderT = 0.6 + Math.random()*0.4;
+      b.wanderAng = Math.atan2(dy,dx);
+      const knock = (1-d/R)*60;
+      b.x += dx/(d||1)*knock; b.y += dy/(d||1)*knock;
+      clampToMap(b);
+      spawnParticles(b.x,b.y,3,'#ffaa00');
+    }
+  }
+  // drop 3 medium foods around the decoy
+  for(let i=0;i<3;i++){
+    const a = Math.random()*Math.PI*2;
+    const r = 25 + Math.random()*30;
+    state.foods.push({ x:dec.x+Math.cos(a)*r, y:dec.y+Math.sin(a)*r, r:6+Math.random()*2 });
+  }
+  state.effects.push({ kind:'decoyburst', x:dec.x, y:dec.y, t:0.5, max:0.5 });
+  shake(7, 0.18);
+  Audio.decoy();
 }
 
 function getInputDir(forAbility=false){
@@ -593,7 +663,12 @@ function speedFor(b){
     if(state.warpT>0) s *= 0.4;
     if(state.player.alive && state.player.mods.slow>0){
       const d = Math.hypot(b.x-state.player.x, b.y-state.player.y);
-      if(d<180) s *= Math.max(0.4, 1 - 0.3*state.player.mods.slow);
+      if(d<180){
+        s *= Math.max(0.4, 1 - 0.3*state.player.mods.slow);
+        if(state.particles && Math.random() < 0.04){
+          state.particles.push({ x:b.x, y:b.y, vx:0, vy:0, life:0.5, max:0.5, color:'#88ccff' });
+        }
+      }
     }
   }
   return s;
@@ -625,6 +700,9 @@ function chewDuration(small, big){
   const ratio = Math.max(0.1, Math.min(1, small.r/big.r));
   return 0.3 + ratio * 0.55; // 0.35 .. 0.85
 }
+function spawnFloat(x,y,text,color){
+  state.floats.push({ x, y, vy:-50, text, color:color||'#fff', life:1.1, max:1.1 });
+}
 function spawnParticles(x,y,n,color){
   for(let i=0;i<n;i++){
     const a=Math.random()*Math.PI*2;
@@ -647,7 +725,9 @@ function bumpCombo(){
   state.comboT = 3;
   if(state.combo>state.comboBest) state.comboBest=state.combo;
   if(state.player.mods.killerInst>0){
-    state.player.r += 0.5 * state.player.mods.killerInst;
+    const gain = 0.5 * state.player.mods.killerInst;
+    state.player.r += gain;
+    spawnFloat(state.player.x, state.player.y - state.player.r - 6, `+${gain.toFixed(1)}`, '#ffd700');
   }
   if(state.combo>1){
     const el=document.getElementById('combo');
@@ -769,10 +849,21 @@ function update(dt){
     pt.x += pt.vx*dt; pt.y += pt.vy*dt;
     pt.vx *= (1 - 2.5*dt); pt.vy *= (1 - 2.5*dt);
   }
-  // decoys decay
+  // floating texts
+  for(let i=state.floats.length-1;i>=0;i--){
+    const f = state.floats[i];
+    f.life -= dt;
+    if(f.life<=0){ state.floats.splice(i,1); continue; }
+    f.y += f.vy*dt;
+    f.vy *= (1 - 1.5*dt);
+  }
+  // decoys decay — explode on expire
   for(let i=state.decoys.length-1;i>=0;i--){
     state.decoys[i].life -= dt;
-    if(state.decoys[i].life<=0) state.decoys.splice(i,1);
+    if(state.decoys[i].life<=0){
+      decoyExplode(state.decoys[i]);
+      state.decoys.splice(i,1);
+    }
   }
   // effects
   for(let i=state.effects.length-1;i>=0;i--){
@@ -845,7 +936,11 @@ function update(dt){
     const wasCD = p.cd>0;
     if(p.cd>0){ p.cd-=dt; if(wasCD && p.cd<=0) Audio.cdready(); }
     if(p.bluffT>0) p.bluffT-=dt;
-    if(p.phaseT>0) p.phaseT-=dt;
+    if(p.phaseT>0){
+      const wasPhase = p.phaseT;
+      p.phaseT-=dt;
+      if(wasPhase>0.8 && p.phaseT<=0) phaseExplode(p);
+    }
     if(p.magnetT>0) p.magnetT-=dt;
     if(p.lureT>0) p.lureT-=dt;
     if(p.chompT>0) p.chompT-=dt;
@@ -861,7 +956,15 @@ function update(dt){
 
     // mods passive ticks
     if(p.mods.glutton>0) p.r -= 0.25*p.mods.glutton*dt;
-    if(p.mods.regen>0 && inZone(p.x,p.y)) p.r += 0.4*p.mods.regen*dt;
+    if(p.mods.regen>0 && inZone(p.x,p.y)){
+      p.r += 0.4*p.mods.regen*dt;
+      // green sparkle particle
+      if(Math.random() < dt*2.5){
+        const a=Math.random()*Math.PI*2;
+        const rd=p.r * (0.6+Math.random()*0.6);
+        spawnParticles(p.x+Math.cos(a)*rd, p.y+Math.sin(a)*rd, 1, '#88ff88');
+      }
+    }
     if(p.mods.sprinter>0 && p.r>30) p.r=30;
     // underdog food rain
     if(isUnderdog(p) && Math.random()<dt*1.6){
@@ -883,16 +986,68 @@ function update(dt){
       sat.y = p.y + Math.sin(sat.ang)*orbitR;
     }
 
-    // tentacles — sway around the player, head reaches further as you grow
-    const baseRot = state.t * 0.7;
+    // tentacles — predator mode: idle near body, lunge at nearby enemies probabilistically
     const N = p.tentacles.length;
+    const reachMax = 90 + p.r*0.6;     // max lunge length scales with size
+    const idleLen = 18 + p.r*0.2;       // curled near body
     for(let i=0;i<N;i++){
       const ten = p.tentacles[i];
-      const offset = (i / Math.max(1,N)) * Math.PI*2;
-      const wig = Math.sin(state.t*2.5 + i*1.7)*0.55;
-      ten.ang = baseRot + offset + wig;
-      ten.length = 60 + p.r*0.9;
+      // init persistent fields
+      if(ten.state===undefined){
+        ten.state='idle'; ten.t=0; ten.cd=Math.random()*0.8;
+        ten.baseAng = (i / Math.max(1,N)) * Math.PI*2;
+        ten.ang = ten.baseAng; ten.length = idleLen; ten.headR = 5;
+      }
+      ten.t += dt;
+      if(ten.cd>0) ten.cd -= dt;
       ten.headR = 6;
+
+      if(ten.state==='idle'){
+        // gentle sway
+        const sway = Math.sin(state.t*1.6 + i*1.7)*0.4;
+        ten.ang = ten.baseAng + state.t*0.25 + sway;
+        ten.length = idleLen + Math.sin(state.t*3+i)*2;
+        // try to lunge if cd ready
+        if(ten.cd<=0){
+          // find nearest non-player enemy within reach
+          let target=null, td=1e9;
+          for(const b of state.balls){
+            if(b.isPlayer || !b.alive) continue;
+            const d = Math.hypot(p.x-b.x, p.y-b.y);
+            if(d < reachMax + b.r && d < td){ td=d; target=b; }
+          }
+          if(target){
+            // probability per second to fire — higher when closer
+            const closeness = 1 - Math.min(1, td/(reachMax+target.r));
+            const chance = (0.6 + closeness*1.8) * dt; // 0.6..2.4 /sec
+            if(Math.random() < chance){
+              ten.state = 'lunge';
+              ten.t = 0;
+              const dx = target.x-p.x, dy = target.y-p.y;
+              ten.targetAng = Math.atan2(dy,dx);
+              ten.targetLen = Math.min(reachMax, Math.hypot(dx,dy)+target.r*0.5);
+            }
+          }
+        }
+      } else if(ten.state==='lunge'){
+        // extend toward target over 0.15s
+        const k = Math.min(1, ten.t/0.15);
+        ten.ang = ten.targetAng;
+        ten.length = idleLen + (ten.targetLen - idleLen) * k;
+        if(ten.t > 0.15) ten.state = 'hold';
+      } else if(ten.state==='hold'){
+        ten.length = ten.targetLen;
+        ten.ang = ten.targetAng;
+        if(ten.t > 0.15 + 0.18) ten.state = 'retract';
+      } else if(ten.state==='retract'){
+        const k = Math.min(1, (ten.t - 0.33)/0.22);
+        ten.ang = ten.targetAng;
+        ten.length = ten.targetLen + (idleLen - ten.targetLen) * k;
+        if(k>=1){
+          ten.state = 'idle'; ten.t = 0;
+          ten.cd = 1.2 + Math.random()*0.8; // 1.2..2.0s downtime
+        }
+      }
       ten.headX = p.x + Math.cos(ten.ang)*ten.length;
       ten.headY = p.y + Math.sin(ten.ang)*ten.length;
     }
@@ -1044,16 +1199,13 @@ function update(dt){
         }
       }
     }
-    // tentacles — head can eat food, devour small balls, chip large ones
+    // tentacles — predator capture: only during lunge/hold can it grab/chip
     for(const ten of p.tentacles){
+      const active = ten.state==='lunge' || ten.state==='hold';
+      if(!active) continue;
+      // food: only direct contact (no magnetism while predator-style)
       for(let fi=state.foods.length-1;fi>=0;fi--){
         const f=state.foods[fi];
-        const d = Math.hypot(ten.headX-f.x, ten.headY-f.y);
-        if(d < 60){
-          // pull-in
-          f.x += (ten.headX-f.x)/(d||1)*220*dt;
-          f.y += (ten.headY-f.y)/(d||1)*220*dt;
-        }
         if(Math.hypot(ten.headX-f.x, ten.headY-f.y) < ten.headR+f.r){
           p.r = Math.sqrt(p.r*p.r + f.r*f.r*0.5);
           state.foods.splice(fi,1);
@@ -1062,26 +1214,30 @@ function update(dt){
       for(const b of state.balls){
         if(b.isPlayer || !b.alive) continue;
         if(Math.hypot(ten.headX-b.x, ten.headY-b.y) < ten.headR+b.r){
-          if(b.r < p.r*0.5){
-            // grab and eat outright
-            const sr = b.r;
+          if(b.r < p.r*0.6){
+            const sr=b.r;
             b.alive=false;
             state.eatCount++;
             p.r = Math.sqrt(p.r*p.r + sr*sr*0.6);
+            spawnParticles(b.x,b.y,10,'#ffffff');
             Audio.eat();
             if(state.eatCount >= state.nextDraftAt){
               state.pendingDraftPick++; state.nextDraftAt += 3;
             }
           } else {
-            b.r -= 8*dt;
+            b.r -= 12*dt;
+            spawnParticles(ten.headX, ten.headY, 1, '#ff6666');
             if(b.r<5){
               b.alive=false;
               state.eatCount++;
+              spawnParticles(b.x,b.y,8,'#ff8800');
               if(state.eatCount >= state.nextDraftAt){
                 state.pendingDraftPick++; state.nextDraftAt += 3;
               }
             }
           }
+          // end the lunge once it connects
+          ten.state='retract'; ten.t=0.33;
         }
       }
     }
@@ -1238,7 +1394,12 @@ function eat(big, small){
     state.eatCount++;
     bumpCombo();
     // adrenaline: each kill cuts current cd
-    if(big.mods.adrenaline>0) big.cd = Math.max(0, big.cd - 0.5*big.mods.adrenaline);
+    if(big.mods.adrenaline>0){
+      const cut = 0.5*big.mods.adrenaline;
+      big.cd = Math.max(0, big.cd - cut);
+      spawnFloat(big.x, big.y - big.r - 16, `-${cut.toFixed(1)}s`, '#88ddff');
+    }
+    if(big.mods.vamp>0) spawnParticles(big.x, big.y, 4 + big.mods.vamp*2, '#ff5555');
     // particles + shake
     const isBig = small.r > big.r*0.5;
     if(isBig){ Audio.bigEat(); spawnParticles(small.x, small.y, 20, '#ffd700'); shake(10, 0.2); }
@@ -1497,13 +1658,23 @@ function render(){
     ctx.beginPath(); ctx.arc(sp.x,sp.y, 500-r, 0, Math.PI*2); ctx.stroke();
   }
 
-  // effects (repel ring)
+  // effects (rings)
   for(const ef of state.effects){
+    const sp=world2screen(ef.x,ef.y);
+    const prog=1 - ef.t/ef.max;
     if(ef.kind==='repel'){
-      const sp=world2screen(ef.x,ef.y);
-      const prog=1 - ef.t/ef.max;
       const rad = prog*280;
       ctx.strokeStyle=`rgba(255,255,255,${(1-prog)*0.6})`;
+      ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(sp.x,sp.y,rad,0,Math.PI*2); ctx.stroke();
+    } else if(ef.kind==='phaseburst'){
+      const rad = prog*140;
+      ctx.strokeStyle=`rgba(140,200,255,${(1-prog)*0.8})`;
+      ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(sp.x,sp.y,rad,0,Math.PI*2); ctx.stroke();
+    } else if(ef.kind==='decoyburst'){
+      const rad = prog*120;
+      ctx.strokeStyle=`rgba(255,170,80,${(1-prog)*0.8})`;
       ctx.lineWidth=3;
       ctx.beginPath(); ctx.arc(sp.x,sp.y,rad,0,Math.PI*2); ctx.stroke();
     }
@@ -1561,26 +1732,31 @@ function render(){
       const ss=world2screen(sat.x,sat.y);
       pxCircle(ss.x, ss.y, sat.r, '#ffffff');
     }
-    // tentacles — chain of dots from body to wiggling head
+    // tentacles — predator: idle = curled stub, lunge = stretched + bright
     for(const ten of p.tentacles){
-      const segs = 10;
       const sp = world2screen(p.x, p.y);
       const sh = world2screen(ten.headX, ten.headY);
+      const isLunging = ten.state==='lunge' || ten.state==='hold';
+      const isRetract = ten.state==='retract';
+      const segs = isLunging ? 12 : (isRetract ? 8 : 5);
+      const wobAmp = isLunging ? 1.5 : 4;
+      const segCol = isLunging ? '#ffffff' : (isRetract ? '#cccccc' : '#888888');
       for(let i=1;i<=segs;i++){
         const t = i/segs;
-        // slight curve for organic feel
         const cx = sp.x + (sh.x-sp.x)*t;
         const cy = sp.y + (sh.y-sp.y)*t;
-        const wob = Math.sin(state.t*4 + i*0.7)*3*t;
+        const wob = Math.sin(state.t*4 + i*0.7)*wobAmp*t;
         const px = cx + wob*Math.cos(ten.ang+Math.PI/2);
         const py = cy + wob*Math.sin(ten.ang+Math.PI/2);
-        ctx.fillStyle = '#dddddd';
+        ctx.fillStyle = segCol;
         ctx.fillRect(Math.floor(px-PIXEL/2), Math.floor(py-PIXEL/2), PIXEL, PIXEL);
       }
-      pxCircle(sh.x, sh.y, ten.headR, '#ffffff');
-      // tip pupil
+      const headColor = isLunging ? '#ffffff' : (isRetract ? '#bbbbbb' : '#888888');
+      pxCircle(sh.x, sh.y, ten.headR, headColor);
       ctx.fillStyle='#000';
       ctx.fillRect(Math.floor(sh.x-PIXEL/2), Math.floor(sh.y-PIXEL/2), PIXEL, PIXEL);
+      // lunge highlight: glow ring
+      if(isLunging) pxRing(sh.x, sh.y, ten.headR+PIXEL, 'rgba(255,80,80,0.6)');
     }
   }
 
@@ -1621,6 +1797,20 @@ function render(){
     ctx.globalAlpha = alpha;
     const sz = 2 + alpha*PIXEL;
     ctx.fillRect(Math.floor(s.x-sz/2), Math.floor(s.y-sz/2), sz, sz);
+  }
+  ctx.globalAlpha = 1;
+
+  // floating text
+  ctx.font = 'bold 14px "Courier New",monospace';
+  ctx.textAlign = 'center';
+  for(const f of state.floats){
+    const s = world2screen(f.x, f.y);
+    const alpha = Math.max(0, Math.min(1, f.life/f.max));
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#000';
+    ctx.fillText(f.text, s.x+1, s.y+1);
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, s.x, s.y);
   }
   ctx.globalAlpha = 1;
 
