@@ -328,6 +328,8 @@ function renderLB(rootId, highlightIdx=-1){
 const MAP=2000;
 const AI_COUNT=42;
 const FOOD_COUNT=200;
+const EATS_TO_FINAL = 30;     // hit this many kills → final wave (no more respawns)
+const HARD_TIME_LIMIT = 120;  // safety: after 2 minutes regardless
 function makeFood(){
   const roll=Math.random();
   let r;
@@ -950,7 +952,14 @@ function update(dt){
   const aliveAll = state.balls.filter(b=>b.alive);
   state.avgSize = aliveAll.reduce((a,b)=>a+b.r,0) / Math.max(1,aliveAll.length);
   const aliveCount=aliveAll.length;
-  if(aliveCount<=5 && !state.endgameMode) state.endgameMode=true;
+  if(!state.endgameMode){
+    if(aliveCount<=5 || state.eatCount >= EATS_TO_FINAL || state.t > HARD_TIME_LIMIT){
+      state.endgameMode = true;
+      showAnnounce('FINAL WAVE 最終局', '#ff4444');
+      Audio.win();
+      Haptic.boom();
+    }
+  }
 
   // zone shrink
   const z=state.zone;
@@ -1566,8 +1575,15 @@ function update(dt){
   // hud
   document.getElementById('sz').textContent=Math.round(p.r);
   document.getElementById('lvlBadge').textContent='LV'+p.level;
+  // eats display: progress to final wave or "FINAL"
+  if(state.endgameMode){
+    document.getElementById('ek').textContent='FINAL';
+    document.getElementById('ek').style.color='#ff5555';
+  } else {
+    document.getElementById('ek').textContent = state.eatCount + '/' + EATS_TO_FINAL;
+    document.getElementById('ek').style.color = '';
+  }
   document.getElementById('al').textContent=state.balls.filter(b=>b.alive).length;
-  document.getElementById('ek').textContent=state.eatCount;
   const ab=ABILITIES[p.ability];
   const ab1=document.getElementById('ability');
   if(p.cd>0) ab1.textContent=`${ab.name} (${p.cd.toFixed(1)}s)`;
